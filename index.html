@@ -283,49 +283,10 @@
   </footer>
 
   <script>
-    // Replace the sample titles and links with your own content.
-    const items = [
-      {
-        title: "Solo Leveling",
-        category: "Anime",
-        season: "Season 1",
-        language: "Tamil / Multi Audio",
-        image: "https://placehold.co/300x400/152338/00ffd5?text=Solo+Leveling",
-        url: ""
-      },
-      {
-        title: "One Piece",
-        category: "Anime",
-        season: "Anime Series",
-        language: "Tamil / Multi Audio",
-        image: "https://placehold.co/300x400/152338/00ffd5?text=One+Piece",
-        url: ""
-      },
-      {
-        title: "Demon Slayer",
-        category: "Anime",
-        season: "Anime Series",
-        language: "Tamil / Multi Audio",
-        image: "https://placehold.co/300x400/152338/00ffd5?text=Demon+Slayer",
-        url: ""
-      },
-      {
-        title: "Anime Movie Collection",
-        category: "Movies",
-        season: "Movie Collection",
-        language: "Audio details coming soon",
-        image: "https://placehold.co/300x400/202038/ffffff?text=Anime+Movies",
-        url: ""
-      },
-      {
-        title: "Web Series Collection",
-        category: "Web Series",
-        season: "Series Collection",
-        language: "Audio details coming soon",
-        image: "https://placehold.co/300x400/202038/ffffff?text=Web+Series",
-        url: ""
-      }
-    ];
+    // STEP: Replace these two placeholders with your Supabase Project URL and
+    // Publishable (or legacy anon/public) key. Never put a service_role/secret key here.
+    const SUPABASE_URL = "PASTE_YOUR_SUPABASE_PROJECT_URL_HERE";
+    const SUPABASE_KEY = "PASTE_YOUR_SUPABASE_PUBLISHABLE_OR_ANON_KEY_HERE";
 
     const grid = document.getElementById("content-grid");
     const search = document.getElementById("search");
@@ -333,20 +294,86 @@
     const buttons = document.querySelectorAll(".nav-btn");
 
     let activeCategory = "All";
+    let items = [];
+    let loadingError = false;
+
+    function telegramPostUrl(item) {
+      const messageId = item.telegram_message_id;
+      const chatId = String(item.telegram_chat_id || "");
+      if (!messageId || !chatId) return "";
+
+      // Private Telegram channel links generally use t.me/c/<channel-id>/<message-id>.
+      const internalChannelId = chatId.replace(/^-100/, "").replace(/^-/, "");
+      return "https://t.me/c/" + internalChannelId + "/" + messageId;
+    }
+
+    function mapRow(row) {
+      const title = row.title || row.filename || row.caption || "Untitled";
+      const seasonText = row.season ? String(row.season) : "";
+      const episodeText = row.episode ? "Episode " + row.episode : "";
+      const qualityText = row.quality || "";
+      const audioText = row.audio || "";
+      const metaParts = [seasonText, episodeText, qualityText, audioText].filter(Boolean);
+
+      return {
+        title,
+        category: row.category || "Anime",
+        season: metaParts.join(" • ") || "Recently added",
+        language: audioText || "Details available on Telegram",
+        image: "https://placehold.co/300x400/152338/00ffd5?text=" +
+          encodeURIComponent(title.slice(0, 35)),
+        url: telegramPostUrl(row)
+      };
+    }
+
+    async function loadMovies() {
+      if (
+        SUPABASE_URL.includes("https://oktfkyebljkyarmccopf.supabase.co") ||
+        SUPABASE_KEY.includes("sb_publishable_lRnjJkHrqwbjgwz7Qtav4A_ltn0EJ5I")
+      ) {
+        loadingError = true;
+        empty.textContent = "Supabase connection setup pending. Add your Project URL and publishable/anon key in index.html.";
+        renderItems();
+        return;
+      }
+
+      try {
+        const endpoint = SUPABASE_URL.replace(/\/$/, "") +
+          "/rest/v1/yogi_files?select=title,filename,caption,category,season,episode,quality,audio,telegram_chat_id,telegram_message_id,created_at&order=created_at.desc";
+
+        const response = await fetch(endpoint, {
+          headers: {
+            "apikey": SUPABASE_KEY,
+            "Authorization": "Bearer " + SUPABASE_KEY
+          }
+        });
+
+        if (!response.ok) {
+          const detail = await response.text();
+          throw new Error("Supabase returned " + response.status + ": " + detail);
+        }
+
+        const rows = await response.json();
+        items = rows.map(mapRow);
+        loadingError = false;
+        renderItems();
+      } catch (error) {
+        console.error("Could not load movies from Supabase:", error);
+        loadingError = true;
+        empty.textContent = "Could not load titles. Check the Supabase URL, public key, table columns, and read policy.";
+        renderItems();
+      }
+    }
 
     function renderItems() {
       const query = search.value.trim().toLowerCase();
 
       const filtered = items.filter(item => {
         const matchesCategory =
-          activeCategory === "All" ||
-          item.category === activeCategory;
-
+          activeCategory === "All" || item.category === activeCategory;
         const matchesSearch =
-          (item.title + " " + item.category + " " +
-           item.season + " " + item.language)
-          .toLowerCase().includes(query);
-
+          (item.title + " " + item.category + " " + item.season + " " + item.language)
+            .toLowerCase().includes(query);
         return matchesCategory && matchesSearch;
       });
 
@@ -363,7 +390,7 @@
         img.loading = "lazy";
         img.onerror = () => {
           img.onerror = null;
-          img.src = "https://placehold.co/300x400/152338/ffffff?text=TCR+Anime";
+          img.src = "https://placehold.co/300x400/152338/ffffff?text=TCR";
         };
 
         const content = document.createElement("div");
@@ -382,15 +409,17 @@
 
         const link = document.createElement("a");
         link.className = "details-btn";
-        link.textContent = "View Details";
+        link.textContent = item.url ? "View on Telegram" : "Link not available";
 
-        if (item.url && /^https?:\/\//i.test(item.url)) {
+        if (item.url && /^https:\/\/t\.me\//i.test(item.url)) {
           link.href = item.url;
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
         } else {
           link.href = "#";
           link.addEventListener("click", event => {
             event.preventDefault();
-            alert("இந்த title-க்கான details page link இன்னும் சேர்க்கப்படவில்லை.");
+            alert("இந்த title-க்கான Telegram post link database-ல் கிடைக்கவில்லை.");
           });
         }
 
@@ -399,26 +428,35 @@
         grid.appendChild(card);
       });
 
-      empty.style.display = filtered.length ? "none" : "block";
+      if (filtered.length) {
+        empty.style.display = "none";
+      } else {
+        empty.style.display = "block";
+        if (!loadingError) {
+          empty.textContent = items.length
+            ? "No titles found. Try another search."
+            : "No movies found in Supabase yet.";
+        }
+      }
     }
 
     buttons.forEach(button => {
       button.addEventListener("click", () => {
         activeCategory = button.dataset.category;
-
         buttons.forEach(b => b.classList.remove("active"));
         button.classList.add("active");
-
         renderItems();
       });
     });
 
     search.addEventListener("input", renderItems);
+    document.getElementById("year").textContent = new Date().getFullYear();
 
-    document.getElementById("year").textContent =
-      new Date().getFullYear();
-
-    renderItems();
+    loadMovies();
+  </script>
+</body>
+</html>
+renderItems();
   </script>
 </body>
 </html>
