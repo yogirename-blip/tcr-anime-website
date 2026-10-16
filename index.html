@@ -1,0 +1,424 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0b0f1a">
+  <meta name="description" content="Tamil Cartoon Rare - Anime, Movies and Web Series updates.">
+  <title>Tamil Cartoon Rare | YOGI ANIME</title>
+
+  <style>
+    :root {
+      --bg: #0b0f1a;
+      --card: #151c2b;
+      --green: #00ffd5;
+      --blue: #229ed9;
+      --text: #f4f7ff;
+      --muted: #9aa8bd;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: Arial, sans-serif;
+      min-height: 100vh;
+    }
+
+    header {
+      padding: 22px 16px;
+      text-align: center;
+      background: linear-gradient(135deg, #101a2c, #142c35);
+      border-bottom: 1px solid #243344;
+    }
+
+    .logo {
+      font-size: 30px;
+      font-weight: 900;
+      letter-spacing: 2px;
+      color: var(--green);
+      text-shadow: 0 0 16px #00ffd544;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 7px;
+      letter-spacing: 2px;
+    }
+
+    nav {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      padding: 15px 10px;
+      background: #101522;
+      position: sticky;
+      top: 0;
+      z-index: 5;
+    }
+
+    .nav-btn {
+      border: 1px solid #2a394b;
+      background: #172132;
+      color: white;
+      padding: 9px 15px;
+      border-radius: 25px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+
+    .nav-btn.active,
+    .nav-btn:hover {
+      background: var(--green);
+      color: #061411;
+      border-color: var(--green);
+    }
+
+    .hero {
+      padding: 30px 16px 20px;
+      text-align: center;
+    }
+
+    .hero h1 {
+      font-size: clamp(23px, 5vw, 36px);
+      margin-bottom: 10px;
+    }
+
+    .hero h1 span {
+      color: var(--green);
+    }
+
+    .hero p {
+      color: var(--muted);
+      line-height: 1.6;
+      max-width: 550px;
+      margin: auto;
+      font-size: 14px;
+    }
+
+    .search-box {
+      max-width: 600px;
+      margin: 22px auto 0;
+      padding: 0 16px;
+    }
+
+    #search {
+      width: 100%;
+      padding: 14px 17px;
+      border-radius: 12px;
+      border: 1px solid #2b3a4c;
+      background: #151c2b;
+      color: white;
+      font-size: 15px;
+      outline: none;
+    }
+
+    #search:focus {
+      border-color: var(--green);
+    }
+
+    main {
+      max-width: 1150px;
+      margin: auto;
+      padding: 20px 14px 45px;
+    }
+
+    .section-title {
+      font-size: 21px;
+      margin-bottom: 18px;
+    }
+
+    .section-title span {
+      color: var(--green);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 13px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid #202c3d;
+      border-radius: 13px;
+      overflow: hidden;
+      transition: transform .2s, border-color .2s;
+    }
+
+    .card:hover {
+      transform: translateY(-4px);
+      border-color: var(--green);
+    }
+
+    .poster {
+      width: 100%;
+      aspect-ratio: 3 / 4;
+      display: block;
+      object-fit: cover;
+      background: #202b3b;
+    }
+
+    .card-content {
+      padding: 12px;
+    }
+
+    .tag {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: bold;
+      color: #061411;
+      background: var(--green);
+      padding: 4px 7px;
+      border-radius: 5px;
+      margin-bottom: 8px;
+    }
+
+    .card h3 {
+      font-size: 14px;
+      line-height: 1.45;
+      margin-bottom: 6px;
+    }
+
+    .meta {
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.6;
+      margin-bottom: 12px;
+    }
+
+    .details-btn {
+      display: block;
+      text-align: center;
+      text-decoration: none;
+      color: #07130f;
+      background: linear-gradient(135deg, #00ffd5, #229ed9);
+      font-size: 12px;
+      font-weight: bold;
+      padding: 10px 5px;
+      border-radius: 8px;
+    }
+
+    .empty {
+      display: none;
+      color: var(--muted);
+      text-align: center;
+      padding: 35px 10px;
+    }
+
+    footer {
+      text-align: center;
+      padding: 25px 15px;
+      background: #101522;
+      border-top: 1px solid #243344;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.9;
+    }
+
+    footer strong {
+      color: var(--green);
+    }
+
+    @media (min-width: 600px) {
+      .grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 18px;
+      }
+    }
+
+    @media (min-width: 900px) {
+      .grid {
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <div class="logo">TCR <span style="color:white">×</span> YOGI</div>
+    <div class="subtitle">TAMIL CARTOON RARE • ANIME UNIVERSE</div>
+  </header>
+
+  <nav aria-label="Content categories">
+    <button class="nav-btn active" data-category="All">Home</button>
+    <button class="nav-btn" data-category="Anime">Anime</button>
+    <button class="nav-btn" data-category="Movies">Movies</button>
+    <button class="nav-btn" data-category="Web Series">Web Series</button>
+  </nav>
+
+  <section class="hero">
+    <h1>Welcome to <span>TCR Universe</span></h1>
+    <p>Your anime, cartoon, movie and web series updates — all in one place.</p>
+
+    <div class="search-box">
+      <input
+        id="search"
+        type="search"
+        placeholder="Search anime, movies..."
+        aria-label="Search titles"
+      >
+    </div>
+  </section>
+
+  <main>
+    <h2 class="section-title">Latest <span>Updates</span></h2>
+    <div class="grid" id="content-grid"></div>
+    <p class="empty" id="empty-message">No titles found. Try another search.</p>
+  </main>
+
+  <footer>
+    <strong>TCR × YOGI ANIME</strong><br>
+    Tamil Cartoon Rare<br>
+    © <span id="year"></span> All rights reserved.
+  </footer>
+
+  <script>
+    // Replace the sample titles and links with your own content.
+    const items = [
+      {
+        title: "Solo Leveling",
+        category: "Anime",
+        season: "Season 1",
+        language: "Tamil / Multi Audio",
+        image: "https://placehold.co/300x400/152338/00ffd5?text=Solo+Leveling",
+        url: ""
+      },
+      {
+        title: "One Piece",
+        category: "Anime",
+        season: "Anime Series",
+        language: "Tamil / Multi Audio",
+        image: "https://placehold.co/300x400/152338/00ffd5?text=One+Piece",
+        url: ""
+      },
+      {
+        title: "Demon Slayer",
+        category: "Anime",
+        season: "Anime Series",
+        language: "Tamil / Multi Audio",
+        image: "https://placehold.co/300x400/152338/00ffd5?text=Demon+Slayer",
+        url: ""
+      },
+      {
+        title: "Anime Movie Collection",
+        category: "Movies",
+        season: "Movie Collection",
+        language: "Audio details coming soon",
+        image: "https://placehold.co/300x400/202038/ffffff?text=Anime+Movies",
+        url: ""
+      },
+      {
+        title: "Web Series Collection",
+        category: "Web Series",
+        season: "Series Collection",
+        language: "Audio details coming soon",
+        image: "https://placehold.co/300x400/202038/ffffff?text=Web+Series",
+        url: ""
+      }
+    ];
+
+    const grid = document.getElementById("content-grid");
+    const search = document.getElementById("search");
+    const empty = document.getElementById("empty-message");
+    const buttons = document.querySelectorAll(".nav-btn");
+
+    let activeCategory = "All";
+
+    function renderItems() {
+      const query = search.value.trim().toLowerCase();
+
+      const filtered = items.filter(item => {
+        const matchesCategory =
+          activeCategory === "All" ||
+          item.category === activeCategory;
+
+        const matchesSearch =
+          (item.title + " " + item.category + " " +
+           item.season + " " + item.language)
+          .toLowerCase().includes(query);
+
+        return matchesCategory && matchesSearch;
+      });
+
+      grid.replaceChildren();
+
+      filtered.forEach(item => {
+        const card = document.createElement("article");
+        card.className = "card";
+
+        const img = document.createElement("img");
+        img.className = "poster";
+        img.src = item.image;
+        img.alt = item.title + " poster";
+        img.loading = "lazy";
+        img.onerror = () => {
+          img.onerror = null;
+          img.src = "https://placehold.co/300x400/152338/ffffff?text=TCR+Anime";
+        };
+
+        const content = document.createElement("div");
+        content.className = "card-content";
+
+        const tag = document.createElement("span");
+        tag.className = "tag";
+        tag.textContent = item.category;
+
+        const title = document.createElement("h3");
+        title.textContent = item.title;
+
+        const meta = document.createElement("p");
+        meta.className = "meta";
+        meta.textContent = item.season + " • " + item.language;
+
+        const link = document.createElement("a");
+        link.className = "details-btn";
+        link.textContent = "View Details";
+
+        if (item.url && /^https?:\/\//i.test(item.url)) {
+          link.href = item.url;
+        } else {
+          link.href = "#";
+          link.addEventListener("click", event => {
+            event.preventDefault();
+            alert("இந்த title-க்கான details page link இன்னும் சேர்க்கப்படவில்லை.");
+          });
+        }
+
+        content.append(tag, title, meta, link);
+        card.append(img, content);
+        grid.appendChild(card);
+      });
+
+      empty.style.display = filtered.length ? "none" : "block";
+    }
+
+    buttons.forEach(button => {
+      button.addEventListener("click", () => {
+        activeCategory = button.dataset.category;
+
+        buttons.forEach(b => b.classList.remove("active"));
+        button.classList.add("active");
+
+        renderItems();
+      });
+    });
+
+    search.addEventListener("input", renderItems);
+
+    document.getElementById("year").textContent =
+      new Date().getFullYear();
+
+    renderItems();
+  </script>
+</body>
+</html>
