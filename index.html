@@ -218,18 +218,6 @@
     .quality-link{display:inline-block;text-decoration:none;background:linear-gradient(135deg,var(--green),var(--blue));color:#07130f;font-size:12px;font-weight:800;padding:9px 13px;border-radius:8px}
     .episode-group{background:var(--card);border:1px solid #243344;border-radius:12px;padding:12px;margin-bottom:12px}
     .episode-heading{font-size:16px;margin-bottom:8px}
-    .stream-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:16px}
-    .stream-btn{border:1px solid #493039;border-radius:12px;padding:13px 8px;text-align:center;text-decoration:none;font-weight:800;color:#fff;background:#28161b;cursor:pointer;font-size:14px}
-    .stream-btn.primary{background:linear-gradient(135deg,#e00018,#b90012);border-color:#e00018}
-    .stream-btn.blue{background:linear-gradient(135deg,#078acb,#00669c);border-color:#078acb}
-    .stream-btn.orange{background:linear-gradient(135deg,#ff641e,#e83a10);border-color:#ff641e}
-    .stream-player{display:none;background:#090909;border:1px solid #39232a;border-radius:16px;padding:10px;margin:14px 0 18px;overflow:hidden}
-    .stream-player.open{display:block}
-    .stream-player video{display:block;width:100%;max-height:70vh;background:#000;border-radius:10px}
-    .stream-note{font-size:12px;color:var(--muted);line-height:1.6;margin-top:10px}
-    .stream-size{display:inline-block;margin-top:16px;padding:7px 11px;border:1px solid #493039;border-radius:8px;color:#ddd;background:#24151a;font-weight:800}
-    @media(max-width:380px){.stream-btn{font-size:12px;padding:11px 5px}}
-
     .empty {
       display: none;
       color: var(--muted);
@@ -263,6 +251,25 @@
         grid-template-columns: repeat(5, minmax(0, 1fr));
       }
     }
+
+    /* TCR Stream Player modal */
+    .tcr-player-modal{position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.88);display:none;align-items:center;justify-content:center;padding:14px;overflow:auto}
+    .tcr-player-modal.open{display:flex}
+    .tcr-player-card{width:min(760px,100%);background:#170b0e;border:1px solid #472128;border-radius:20px;overflow:hidden;box-shadow:0 18px 60px #0009}
+    .tcr-player-top{display:flex;align-items:center;justify-content:space-between;padding:15px 17px;background:#100b0e;border-bottom:1px solid #3a2025;gap:12px}
+    .tcr-player-brand{font-weight:900;color:#ff2638;letter-spacing:1px;font-size:18px}
+    .tcr-player-close{border:1px solid #623039;background:#241116;color:#fff;border-radius:50%;width:40px;height:40px;font-size:24px;cursor:pointer}
+    .tcr-player-title{padding:14px 17px 0;font-weight:800;font-size:16px;overflow-wrap:anywhere}
+    .tcr-video-wrap{margin:14px 16px 0;background:#000;border-radius:15px;overflow:hidden;aspect-ratio:16/9;display:flex;align-items:center;justify-content:center}
+    .tcr-video-wrap video{width:100%;height:100%;background:#000;object-fit:contain}
+    .tcr-player-note{padding:13px 17px;color:#d0bfc2;font-size:13px;line-height:1.55}
+    .tcr-player-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:0 16px 17px}
+    .tcr-player-action{display:flex;align-items:center;justify-content:center;min-height:48px;border-radius:12px;text-decoration:none;text-align:center;padding:10px;background:#291318;border:1px solid #563039;color:#fff;font-weight:800;cursor:pointer;font-size:14px}
+    .tcr-player-action.primary{background:linear-gradient(135deg,#e60018,#b60012);border-color:#f32b3b}
+    .tcr-player-action.blue{background:linear-gradient(135deg,#078bc4,#0564a5);border-color:#119bd9}
+    .tcr-file-size{padding:0 17px 14px;color:#e7cfd2;font-size:12px}
+    @media(max-width:420px){.tcr-player-actions{gap:8px}.tcr-player-action{font-size:12px;padding:8px}.tcr-player-brand{font-size:16px}}
+
   </style>
 </head>
 
@@ -296,8 +303,27 @@
   <main>
     <section id="list-view"><h2 class="section-title">Latest <span>Updates</span></h2>
     <div class="grid" id="content-grid"></div><p class="empty" id="empty-message">No titles found. Try another search.</p></section>
-    <section id="detail-view" style="display:none"><button class="nav-btn" id="back-button">← All titles</button><div id="detail-content" style="margin:18px 0"></div><div id="stream-player" class="stream-player"><video id="tcr-video" controls playsinline preload="metadata"></video><p id="stream-note" class="stream-note">Video URL இருந்தால் இங்கே play ஆகும்.</p><div class="stream-actions"><button class="stream-btn" id="close-player">Close Player</button><button class="stream-btn primary" id="fullscreen-player">Fullscreen</button></div></div><h2 class="section-title">Episodes / Files <span id="episode-count"></span></h2><div id="episode-list"></div></section>
+    <section id="detail-view" style="display:none"><button class="nav-btn" id="back-button">← All titles</button><div id="detail-content" style="margin:18px 0"></div><h2 class="section-title">Episodes / Files <span id="episode-count"></span></h2><div id="episode-list"></div></section>
   </main>
+
+
+  <div id="tcr-player-modal" class="tcr-player-modal" role="dialog" aria-modal="true" aria-label="TCR Stream Player">
+    <div class="tcr-player-card">
+      <div class="tcr-player-top"><div class="tcr-player-brand">TCR STREAM</div><button class="tcr-player-close" id="tcr-player-close" aria-label="Close player">×</button></div>
+      <div class="tcr-player-title" id="tcr-player-title">Video</div>
+      <div class="tcr-video-wrap" id="tcr-video-wrap"><video id="tcr-video" controls playsinline preload="metadata"></video></div>
+      <div class="tcr-player-note" id="tcr-player-note">Loading video…</div>
+      <div class="tcr-file-size" id="tcr-file-size"></div>
+      <div class="tcr-player-actions">
+        <a class="tcr-player-action blue" id="tcr-get-tg" href="#" target="_blank" rel="noopener noreferrer">✈ Get TG File</a>
+        <a class="tcr-player-action primary" id="tcr-download" href="#" target="_blank" rel="noopener noreferrer" download>⬇ Download</a>
+        <button class="tcr-player-action" id="tcr-copy" type="button">🔗 Copy Link</button>
+        <a class="tcr-player-action" id="tcr-vlc" href="#" target="_blank" rel="noopener noreferrer">▶ VLC</a>
+        <a class="tcr-player-action blue" id="tcr-mx" href="#" target="_blank" rel="noopener noreferrer">▶ MX</a>
+        <a class="tcr-player-action blue" id="tcr-mxpro" href="#" target="_blank" rel="noopener noreferrer">⏵ MX Pro</a>
+      </div>
+    </div>
+  </div>
 
   <footer>
     <strong>TCR × YOGI ANIME</strong><br>
@@ -346,8 +372,9 @@
             const quality=String(v.quality||'Quality not specified').trim();
             const key=quality.toLowerCase()+'|'+String(v.watching_url||'')+'|'+String(v.filename||'').toLowerCase();
             if(seen.has(key))return;seen.add(key);
-            const a=document.createElement('button');a.className='quality-link';a.type='button';a.textContent=quality;
-            a.addEventListener('click',()=>openStreamActions(v,g.title,ep.title,quality));
+            const a=document.createElement('button');a.className='quality-link';a.type='button';a.textContent='▶ '+quality;
+            a.style.border='0';a.style.cursor='pointer';
+            a.addEventListener('click',()=>openTcrPlayer(v, g.title+' — '+(ep.title||'Episode')+' — '+audio+' — '+quality));
             qualities.append(a);
           });
           box.append(qualities);section.append(box);
@@ -357,35 +384,35 @@
       document.getElementById('episode-count').textContent='('+((g.episodes||[]).length)+' episodes • '+(g.variant_count||0)+' files)';
     }
 
-    let activeStreamVariant=null;
-    function validHttp(u){return typeof u==='string'&&/^https?:\/\//i.test(u)}
-    function openStreamActions(v,title,episode,quality){
-      activeStreamVariant=v||{};
-      const direct=v.play_url||v.stream_url||v.video_url||'';
-      const download=v.download_url||'';
-      const tg=v.telegram_url||v.watching_url||'';
-      const filename=v.filename||'';
-      const modal=document.getElementById('stream-player');
-      const video=document.getElementById('tcr-video');
-      const note=document.getElementById('stream-note');
-      const isDirect=validHttp(direct)&&!/t\.me\//i.test(direct);
-      modal.classList.add('open');
-      if(isDirect){video.src=direct;note.textContent='இப்போது: '+title+' · '+episode+' · '+quality+' — Video playback URL பயன்படுத்தப்படுகிறது.';video.load();}
-      else{video.pause();video.removeAttribute('src');video.load();note.textContent='இந்த file-க்கு நேரடி streaming URL இன்னும் அமைக்கப்படவில்லை. Telegram link மட்டும் இருந்தால் browser player-ல் video ஓடாது. கீழே உள்ள Get TG File மூலம் bot-ல் பெறலாம்.';}
-      const actions=document.getElementById('stream-actions-dynamic');
-      if(actions) actions.remove();
-      const box=document.createElement('div');box.id='stream-actions-dynamic';box.className='stream-actions';
-      const add=(label,cls,fn)=>{const b=document.createElement('button');b.type='button';b.className='stream-btn '+(cls||'');b.textContent=label;b.addEventListener('click',fn);box.append(b);};
-      add('Get TG File','blue',()=>{if(validHttp(tg))window.open(tg,'_blank','noopener');else alert('Telegram file link கிடைக்கவில்லை.');});
-      add('Download','primary',()=>{if(validHttp(download))window.open(download,'_blank','noopener');else if(isDirect)window.open(direct,'_blank','noopener');else alert('Download URL இன்னும் அமைக்கப்படவில்லை.');});
-      add('Copy Link','',async()=>{const u=isDirect?direct:(validHttp(tg)?tg:'');if(!u){alert('Copy செய்ய link இல்லை.');return;}try{await navigator.clipboard.writeText(u);alert('Link copied!');}catch(e){prompt('Copy link:',u);}});
-      add('VLC','orange',()=>{if(isDirect)location.href='vlc://'+direct.replace(/^https?:\/\//i,'');else alert('VLC-க்கு நேரடி video URL தேவை.');});
-      add('MX','blue',()=>{if(isDirect)location.href='intent:'+direct.replace(/^https?:\/\//i,'')+'#Intent;package=com.mxtech.videoplayer.ad;type=video/*;scheme=https;end';else alert('MX Player-க்கு நேரடி video URL தேவை.');});
-      add('MX Pro','blue',()=>{if(isDirect)location.href='intent:'+direct.replace(/^https?:\/\//i,'')+'#Intent;package=com.mxtech.videoplayer.pro;type=video/*;scheme=https;end';else alert('MX Pro-க்கு நேரடி video URL தேவை.');});
-      modal.append(box);modal.scrollIntoView({behavior:'smooth',block:'start'});
+
+    const tcrModal=document.getElementById('tcr-player-modal');
+    const tcrVideo=document.getElementById('tcr-video');
+    let tcrCurrentUrl='';
+    function isDirectVideoUrl(url){
+      try{const u=new URL(url);return /^https?:$/.test(u.protocol)&&(/\.(mp4|m4v|webm|ogv|m3u8|mpd)(?:$|\?)/i.test(u.pathname+u.search)||u.searchParams.has('stream'));}catch(_){return false;}
     }
-    document.getElementById('close-player').addEventListener('click',()=>{const v=document.getElementById('tcr-video');v.pause();v.removeAttribute('src');v.load();document.getElementById('stream-player').classList.remove('open');});
-    document.getElementById('fullscreen-player').addEventListener('click',()=>{const v=document.getElementById('tcr-video');if(v.requestFullscreen)v.requestFullscreen();else if(v.webkitEnterFullscreen)v.webkitEnterFullscreen();});
+    function setAction(id,url){const el=document.getElementById(id);if(url&&/^https?:\/\//i.test(url)){el.href=url;el.style.opacity='1';el.style.pointerEvents='auto';}else{el.href='#';el.style.opacity='.45';el.style.pointerEvents='none';}}
+    function openTcrPlayer(variant,title){
+      const url=String(variant.watching_url||variant.telegram_url||'').trim();tcrCurrentUrl=url;
+      document.getElementById('tcr-player-title').textContent=title||'TCR Stream';
+      document.getElementById('tcr-file-size').textContent=variant.file_size?('File size: '+formatTcrSize(variant.file_size)):'';
+      setAction('tcr-get-tg',url);setAction('tcr-download',url);setAction('tcr-vlc',url);setAction('tcr-mx',url);setAction('tcr-mxpro',url);
+      tcrVideo.pause();tcrVideo.removeAttribute('src');tcrVideo.load();
+      if(url&&isDirectVideoUrl(url)){
+        tcrVideo.src=url;tcrVideo.style.display='block';
+        document.getElementById('tcr-player-note').textContent='Video source found. Press Play to start. If the host blocks browser playback, a compatible streaming URL with byte-range support is needed.';
+      }else{
+        tcrVideo.style.display='none';
+        document.getElementById('tcr-player-note').textContent=url?'This is a Telegram post/link, not a direct video stream. The player cannot play it inline yet. Use Get TG File to open Telegram; to play here, the bot needs a streaming endpoint that serves the video bytes.':'No video URL is available for this file yet.';
+      }
+      tcrModal.classList.add('open');document.body.style.overflow='hidden';
+    }
+    function closeTcrPlayer(){tcrVideo.pause();tcrVideo.removeAttribute('src');tcrVideo.load();tcrModal.classList.remove('open');document.body.style.overflow='';}
+    function formatTcrSize(n){n=Number(n);if(!Number.isFinite(n)||n<=0)return '';const units=['B','KB','MB','GB','TB'];let i=0;while(n>=1024&&i<units.length-1){n/=1024;i++;}return n.toFixed(i>1?2:0)+' '+units[i];}
+    document.getElementById('tcr-player-close').addEventListener('click',closeTcrPlayer);
+    tcrModal.addEventListener('click',e=>{if(e.target===tcrModal)closeTcrPlayer();});
+    document.addEventListener('keydown',e=>{if(e.key==='Escape'&&tcrModal.classList.contains('open'))closeTcrPlayer();});
+    document.getElementById('tcr-copy').addEventListener('click',async()=>{if(!tcrCurrentUrl)return;try{await navigator.clipboard.writeText(tcrCurrentUrl);document.getElementById('tcr-copy').textContent='✓ Copied';setTimeout(()=>document.getElementById('tcr-copy').textContent='🔗 Copy Link',1600);}catch(_){window.prompt('Copy this link:',tcrCurrentUrl);}});
 
     async function load(){try{const r=await fetch('/api/public-posts',{cache:'no-store'});if(!r.ok)throw Error('API '+r.status);groups=await r.json();const slug=new URLSearchParams(location.search).get('title');if(slug){const d=await fetch('/api/public-posts/'+encodeURIComponent(slug),{cache:'no-store'});if(d.ok){renderDetail(await d.json());return;}}renderItems();}catch(e){empty.style.display='block';empty.textContent='Could not load titles. Please refresh.';}}
     buttons.forEach(b=>b.addEventListener('click',()=>{activeCategory=b.dataset.category;buttons.forEach(x=>x.classList.toggle('active',x===b));renderItems();}));
