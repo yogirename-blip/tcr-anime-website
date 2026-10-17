@@ -335,7 +335,7 @@
             const key=quality.toLowerCase()+'|'+String(v.watching_url||'')+'|'+String(v.filename||'').toLowerCase();
             if(seen.has(key))return;seen.add(key);
             const a=document.createElement('a');a.className='quality-link';a.textContent=quality;
-            if(v.watching_url&&/^https?:\/\//i.test(v.watching_url)){a.href=v.watching_url;a.target='_blank';a.rel='noopener noreferrer';}
+            const target=v.play_url||v.watching_url||v.download_url||'';if(target&&/^https?:\/\//i.test(target)){a.href=target;a.target='_blank';a.rel='noopener noreferrer';}
             else{a.href='#';a.textContent=quality+' (Link unavailable)';a.onclick=e=>e.preventDefault();}
             qualities.append(a);
           });
