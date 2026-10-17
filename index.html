@@ -211,7 +211,7 @@
     #detail-content img{width:100%;aspect-ratio:3/4;object-fit:cover;border-radius:12px;background:#152338}
     #detail-content p{color:var(--muted);font-size:13px;line-height:1.7;margin-top:10px;overflow-wrap:anywhere}
     .episode-row{display:flex;justify-content:space-between;align-items:center;gap:12px;background:var(--card);border:1px solid #243344;border-radius:12px;padding:13px;margin-bottom:10px}
-    .episode-row h3{font-size:14px;line-height:1.5}.episode-row p{font-size:12px;color:var(--muted);line-height:1.6;margin-top:5px}
+    .episode-group{background:#101725;border:1px solid #243344;border-radius:13px;padding:12px;margin:12px 0}.episode-heading{font-size:15px;color:var(--green);margin:0 0 10px}.episode-row h3{font-size:14px;line-height:1.5}.episode-row p{font-size:12px;color:var(--muted);line-height:1.6;margin-top:5px}.variant-info strong{font-size:13px;color:#f4f7ff}
     .empty {
       display: none;
       color: var(--muted);
@@ -302,8 +302,8 @@
         const img=document.createElement('img');img.className='poster';img.src=poster(item.poster_url,item.title);img.alt=item.title+' poster';img.loading='lazy';img.onerror=()=>{img.onerror=null;img.src=fallback;};
         const content=document.createElement('div');content.className='card-content';
         const tag=document.createElement('span');tag.className='tag';tag.textContent=item.category||'Anime';
-        const title=document.createElement('h3');title.textContent=item.title+(item.season?' '+item.season:'');
-        const meta=document.createElement('p');meta.className='meta';const bits=[(item.episode_count||0)+' episode/file'+((item.episode_count||0)===1?'':'s')];if(item.qualities?.length)bits.push(item.qualities.join(', '));if(item.audios?.length)bits.push(item.audios.join(', '));meta.textContent=bits.join(' • ');
+        const title=document.createElement('h3');title.textContent=item.title;
+        const meta=document.createElement('p');meta.className='meta';meta.textContent=(item.episode_count||0)+' episodes • '+(item.variant_count||0)+' audio/quality files';
         const link=document.createElement('a');link.className='details-btn';link.textContent='View Episodes / Details';link.href='?title='+encodeURIComponent(item.slug);
         content.append(tag,title,meta,link);card.append(img,content);grid.append(card);
       });empty.style.display=list.length?'none':'block';
@@ -313,8 +313,21 @@
       const cover=poster(g.poster_url,g.title);
       document.getElementById('detail-content').innerHTML='<img src="'+esc(cover)+'" alt="'+esc(g.title)+' poster" onerror="this.onerror=null;this.src=\''+fallback+'\'"><div><span class="tag">'+esc(g.category)+'</span><h1>'+esc(g.title)+(g.season?' <span style="color:var(--green)">'+esc(g.season)+'</span>':'')+'</h1><p>'+esc(g.description||'')+'</p><p>'+esc([...(g.qualities||[]),...(g.audios||[])].join(' • '))+'</p></div>';
       const list=document.getElementById('episode-list');list.replaceChildren();
-      (g.episodes||[]).forEach((ep,i)=>{const row=document.createElement('article');row.className='episode-row';const info=document.createElement('div');const h=document.createElement('h3');h.textContent=ep.episode||ep.filename||('File '+(i+1));const p=document.createElement('p');const details=[];if(ep.quality)details.push(ep.quality);if(ep.audio)details.push(ep.audio);if(ep.file_size){const n=Number(ep.file_size);details.push(n>1073741824?(n/1073741824).toFixed(2)+' GB':n>1048576?(n/1048576).toFixed(1)+' MB':'File size available');}p.textContent=details.join(' • ');info.append(h,p);const a=document.createElement('a');a.className='details-btn';a.textContent='Open';const url=ep.watching_url||ep.telegram_url||'';if(url&&/^https?:\/\//i.test(url)){a.href=url;a.target='_blank';a.rel='noopener noreferrer';}else{a.href='#';a.textContent='Link unavailable';}row.append(info,a);list.append(row);});
-      document.getElementById('episode-count').textContent='('+((g.episodes||[]).length)+')';
+      (g.episodes||[]).forEach((ep,i)=>{
+        const section=document.createElement('section');section.className='episode-group';
+        const h=document.createElement('h3');h.className='episode-heading';h.textContent=ep.title||('Episode '+(i+1));section.append(h);
+        (ep.variants||[]).forEach((v,j)=>{
+          const row=document.createElement('article');row.className='episode-row';
+          const info=document.createElement('div');info.className='variant-info';
+          const label=document.createElement('strong');label.textContent=v.audio||'Audio not specified';
+          const p=document.createElement('p');const details=[];if(v.quality)details.push(v.quality);if(v.file_size){const n=Number(v.file_size);details.push(n>1073741824?(n/1073741824).toFixed(2)+' GB':n>1048576?(n/1048576).toFixed(1)+' MB':'File size available');}p.textContent=details.join(' • ');info.append(label,p);
+          const a=document.createElement('a');a.className='details-btn';a.textContent='Open';const url=v.watching_url||'';
+          if(url&&/^https?:\/\//i.test(url)){a.href=url;a.target='_blank';a.rel='noopener noreferrer';}else{a.href='#';a.textContent='Link unavailable';}
+          row.append(info,a);section.append(row);
+        });
+        list.append(section);
+      });
+      document.getElementById('episode-count').textContent='('+((g.episodes||[]).length)+' episodes • '+(g.variant_count||0)+' files)';
     }
     async function load(){try{const r=await fetch('/api/public-posts',{cache:'no-store'});if(!r.ok)throw Error('API '+r.status);groups=await r.json();const slug=new URLSearchParams(location.search).get('title');if(slug){const d=await fetch('/api/public-posts/'+encodeURIComponent(slug),{cache:'no-store'});if(d.ok){renderDetail(await d.json());return;}}renderItems();}catch(e){empty.style.display='block';empty.textContent='Could not load titles. Please refresh.';}}
     buttons.forEach(b=>b.addEventListener('click',()=>{activeCategory=b.dataset.category;buttons.forEach(x=>x.classList.toggle('active',x===b));renderItems();}));
