@@ -9,7 +9,7 @@ app = Flask(__name__, static_folder=".", static_url_path="")
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "")
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 SUPER_ADMIN_EMAIL = os.environ.get("SUPER_ADMIN_EMAIL", "").strip().lower()
-ADMIN_PASSWORD_HASH = os.environ.get("ADMIN_PASSWORD_HASH", "")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD_HASH", "")
 ADMIN_EMAILS = [e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()]
 if not all([app.secret_key, DATABASE_URL, SUPER_ADMIN_EMAIL, ADMIN_PASSWORD_HASH]):
     raise RuntimeError("Set FLASK_SECRET_KEY, DATABASE_URL, SUPER_ADMIN_EMAIL, ADMIN_PASSWORD_HASH in Render.")
