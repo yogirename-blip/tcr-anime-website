@@ -1,1 +1,5 @@
-Flask==3.1.1\ngunicorn==23.0.0\npsycopg[binary]==3.2.9\n
+
+Flask==3.1.1
+gunicorn==23.0.0
+psycopg[binary]==3.2.9
+
