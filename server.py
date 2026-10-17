@@ -221,7 +221,12 @@ def create_stream_service_link(file_id):
             app.logger.error("Streaming service link API returned %s", response.status_code)
             return jsonify(error="Streaming service could not create links", upstream_status=response.status_code), 502
         data = response.json()
-        return jsonify(ok=True, watch_url=data.get("watch_url"), download_url=data.get("download_url"))
+        watch_url = data.get("watch_url") or data.get("url")
+        download_url = data.get("download_url")
+        if not watch_url or not download_url:
+            app.logger.error("Streaming service returned incomplete link response")
+            return jsonify(error="Streaming service returned no watch/download URL"), 502
+        return jsonify(ok=True, watch_url=watch_url, play_url=watch_url, download_url=download_url)
     except Exception:
         app.logger.exception("Streaming service link request failed")
         return jsonify(error="Could not contact streaming service"), 502
@@ -372,7 +377,7 @@ def public_rows():
                 token = stream_signer.dumps(int(row['id']))
                 # The browser asks our Flask backend for signed MTProto URLs only when a file is selected.
                 # This avoids creating hundreds of remote links for every homepage request.
-                stream_service_url = f"/api/stream-link/{int(row['id'])}" if STREAMING_SERVICE_URL and STREAM_ADMIN_KEY and mid and chat.lstrip('-').isdigit() else ''
+                stream_service_url = f"/api/stream-link/{int(row['id'])}" if mid and chat.lstrip('-').isdigit() else ''
                 stream_url = f"/stream/{token}" if BOT_TOKEN and row.get('telegram_file_id') else ''
                 tg_deep_link = f"https://t.me/{MEDIA_BOT_USERNAME}?start=file_{row['id']}" if MEDIA_BOT_USERNAME else url
                 row.update(source_type='telegram',display_title=title,category=category_for(row,title),description=row.get('overview') or row.get('caption') or '',watching_url=tg_deep_link,telegram_url=tg_deep_link,play_url=stream_url,download_url=stream_url,stream_service_url=stream_service_url)
@@ -480,4 +485,3 @@ def public_series_detail(slug):
 
 with app.app_context(): init_db()
 if __name__=="__main__": app.run(host="0.0.0.0",port=int(os.environ.get("PORT","10000")))
-                                                                         
