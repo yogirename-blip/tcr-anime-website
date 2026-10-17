@@ -218,6 +218,18 @@
     .quality-link{display:inline-block;text-decoration:none;background:linear-gradient(135deg,var(--green),var(--blue));color:#07130f;font-size:12px;font-weight:800;padding:9px 13px;border-radius:8px}
     .episode-group{background:var(--card);border:1px solid #243344;border-radius:12px;padding:12px;margin-bottom:12px}
     .episode-heading{font-size:16px;margin-bottom:8px}
+    .stream-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:16px}
+    .stream-btn{border:1px solid #493039;border-radius:12px;padding:13px 8px;text-align:center;text-decoration:none;font-weight:800;color:#fff;background:#28161b;cursor:pointer;font-size:14px}
+    .stream-btn.primary{background:linear-gradient(135deg,#e00018,#b90012);border-color:#e00018}
+    .stream-btn.blue{background:linear-gradient(135deg,#078acb,#00669c);border-color:#078acb}
+    .stream-btn.orange{background:linear-gradient(135deg,#ff641e,#e83a10);border-color:#ff641e}
+    .stream-player{display:none;background:#090909;border:1px solid #39232a;border-radius:16px;padding:10px;margin:14px 0 18px;overflow:hidden}
+    .stream-player.open{display:block}
+    .stream-player video{display:block;width:100%;max-height:70vh;background:#000;border-radius:10px}
+    .stream-note{font-size:12px;color:var(--muted);line-height:1.6;margin-top:10px}
+    .stream-size{display:inline-block;margin-top:16px;padding:7px 11px;border:1px solid #493039;border-radius:8px;color:#ddd;background:#24151a;font-weight:800}
+    @media(max-width:380px){.stream-btn{font-size:12px;padding:11px 5px}}
+
     .empty {
       display: none;
       color: var(--muted);
@@ -284,7 +296,7 @@
   <main>
     <section id="list-view"><h2 class="section-title">Latest <span>Updates</span></h2>
     <div class="grid" id="content-grid"></div><p class="empty" id="empty-message">No titles found. Try another search.</p></section>
-    <section id="detail-view" style="display:none"><button class="nav-btn" id="back-button">← All titles</button><div id="detail-content" style="margin:18px 0"></div><h2 class="section-title">Episodes / Files <span id="episode-count"></span></h2><div id="episode-list"></div></section>
+    <section id="detail-view" style="display:none"><button class="nav-btn" id="back-button">← All titles</button><div id="detail-content" style="margin:18px 0"></div><div id="stream-player" class="stream-player"><video id="tcr-video" controls playsinline preload="metadata"></video><p id="stream-note" class="stream-note">Video URL இருந்தால் இங்கே play ஆகும்.</p><div class="stream-actions"><button class="stream-btn" id="close-player">Close Player</button><button class="stream-btn primary" id="fullscreen-player">Fullscreen</button></div></div><h2 class="section-title">Episodes / Files <span id="episode-count"></span></h2><div id="episode-list"></div></section>
   </main>
 
   <footer>
@@ -334,9 +346,8 @@
             const quality=String(v.quality||'Quality not specified').trim();
             const key=quality.toLowerCase()+'|'+String(v.watching_url||'')+'|'+String(v.filename||'').toLowerCase();
             if(seen.has(key))return;seen.add(key);
-            const a=document.createElement('a');a.className='quality-link';a.textContent=quality;
-            const target=v.play_url||v.watching_url||v.download_url||'';if(target&&/^https?:\/\//i.test(target)){a.href=target;a.target='_blank';a.rel='noopener noreferrer';}
-            else{a.href='#';a.textContent=quality+' (Link unavailable)';a.onclick=e=>e.preventDefault();}
+            const a=document.createElement('button');a.className='quality-link';a.type='button';a.textContent=quality;
+            a.addEventListener('click',()=>openStreamActions(v,g.title,ep.title,quality));
             qualities.append(a);
           });
           box.append(qualities);section.append(box);
@@ -345,6 +356,36 @@
       });
       document.getElementById('episode-count').textContent='('+((g.episodes||[]).length)+' episodes • '+(g.variant_count||0)+' files)';
     }
+
+    let activeStreamVariant=null;
+    function validHttp(u){return typeof u==='string'&&/^https?:\/\//i.test(u)}
+    function openStreamActions(v,title,episode,quality){
+      activeStreamVariant=v||{};
+      const direct=v.play_url||v.stream_url||v.video_url||'';
+      const download=v.download_url||'';
+      const tg=v.telegram_url||v.watching_url||'';
+      const filename=v.filename||'';
+      const modal=document.getElementById('stream-player');
+      const video=document.getElementById('tcr-video');
+      const note=document.getElementById('stream-note');
+      const isDirect=validHttp(direct)&&!/t\.me\//i.test(direct);
+      modal.classList.add('open');
+      if(isDirect){video.src=direct;note.textContent='இப்போது: '+title+' · '+episode+' · '+quality+' — Video playback URL பயன்படுத்தப்படுகிறது.';video.load();}
+      else{video.pause();video.removeAttribute('src');video.load();note.textContent='இந்த file-க்கு நேரடி streaming URL இன்னும் அமைக்கப்படவில்லை. Telegram link மட்டும் இருந்தால் browser player-ல் video ஓடாது. கீழே உள்ள Get TG File மூலம் bot-ல் பெறலாம்.';}
+      const actions=document.getElementById('stream-actions-dynamic');
+      if(actions) actions.remove();
+      const box=document.createElement('div');box.id='stream-actions-dynamic';box.className='stream-actions';
+      const add=(label,cls,fn)=>{const b=document.createElement('button');b.type='button';b.className='stream-btn '+(cls||'');b.textContent=label;b.addEventListener('click',fn);box.append(b);};
+      add('Get TG File','blue',()=>{if(validHttp(tg))window.open(tg,'_blank','noopener');else alert('Telegram file link கிடைக்கவில்லை.');});
+      add('Download','primary',()=>{if(validHttp(download))window.open(download,'_blank','noopener');else if(isDirect)window.open(direct,'_blank','noopener');else alert('Download URL இன்னும் அமைக்கப்படவில்லை.');});
+      add('Copy Link','',async()=>{const u=isDirect?direct:(validHttp(tg)?tg:'');if(!u){alert('Copy செய்ய link இல்லை.');return;}try{await navigator.clipboard.writeText(u);alert('Link copied!');}catch(e){prompt('Copy link:',u);}});
+      add('VLC','orange',()=>{if(isDirect)location.href='vlc://'+direct.replace(/^https?:\/\//i,'');else alert('VLC-க்கு நேரடி video URL தேவை.');});
+      add('MX','blue',()=>{if(isDirect)location.href='intent:'+direct.replace(/^https?:\/\//i,'')+'#Intent;package=com.mxtech.videoplayer.ad;type=video/*;scheme=https;end';else alert('MX Player-க்கு நேரடி video URL தேவை.');});
+      add('MX Pro','blue',()=>{if(isDirect)location.href='intent:'+direct.replace(/^https?:\/\//i,'')+'#Intent;package=com.mxtech.videoplayer.pro;type=video/*;scheme=https;end';else alert('MX Pro-க்கு நேரடி video URL தேவை.');});
+      modal.append(box);modal.scrollIntoView({behavior:'smooth',block:'start'});
+    }
+    document.getElementById('close-player').addEventListener('click',()=>{const v=document.getElementById('tcr-video');v.pause();v.removeAttribute('src');v.load();document.getElementById('stream-player').classList.remove('open');});
+    document.getElementById('fullscreen-player').addEventListener('click',()=>{const v=document.getElementById('tcr-video');if(v.requestFullscreen)v.requestFullscreen();else if(v.webkitEnterFullscreen)v.webkitEnterFullscreen();});
 
     async function load(){try{const r=await fetch('/api/public-posts',{cache:'no-store'});if(!r.ok)throw Error('API '+r.status);groups=await r.json();const slug=new URLSearchParams(location.search).get('title');if(slug){const d=await fetch('/api/public-posts/'+encodeURIComponent(slug),{cache:'no-store'});if(d.ok){renderDetail(await d.json());return;}}renderItems();}catch(e){empty.style.display='block';empty.textContent='Could not load titles. Please refresh.';}}
     buttons.forEach(b=>b.addEventListener('click',()=>{activeCategory=b.dataset.category;buttons.forEach(x=>x.classList.toggle('active',x===b));renderItems();}));
