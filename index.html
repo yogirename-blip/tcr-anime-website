@@ -360,10 +360,22 @@
     let activeStreamVariant=null;
     function validHttp(u){return typeof u==='string'&&/^https?:\/\//i.test(u)}
     function absoluteUrl(u){try{return new URL(u,location.origin).href}catch(e){return ''}}
-    function openStreamActions(v,title,episode,quality){
+    async function openStreamActions(v,title,episode,quality){
       activeStreamVariant=v||{};
-      const direct=absoluteUrl(v.play_url||v.stream_url||v.video_url||'');
-      const download=v.download_url||'';
+      let playCandidate=v.play_url||v.stream_url||v.video_url||'';
+      let downloadCandidate=v.download_url||'';
+      let linkError='';
+      if(v.stream_service_url){
+        try{
+          const response=await fetch(v.stream_service_url,{cache:'no-store'});
+          const payload=await response.json();
+          if(!response.ok||!payload.watch_url)throw new Error(payload.error||('HTTP '+response.status));
+          playCandidate=payload.watch_url;
+          downloadCandidate=payload.download_url||'';
+        }catch(err){linkError=String(err.message||err);playCandidate='';downloadCandidate='';}
+      }
+      const direct=absoluteUrl(playCandidate);
+      const download=absoluteUrl(downloadCandidate);
       const tg=v.telegram_url||v.watching_url||'';
       const filename=v.filename||'';
       const modal=document.getElementById('stream-player');
@@ -372,7 +384,7 @@
       const isDirect=validHttp(direct)&&!/t\.me\//i.test(direct);
       modal.classList.add('open');
       if(isDirect){video.src=direct;note.textContent='இப்போது: '+title+' · '+episode+' · '+quality+' — Video playback URL பயன்படுத்தப்படுகிறது.';video.load();}
-      else{video.pause();video.removeAttribute('src');video.load();note.textContent='Stream link கிடைக்கவில்லை அல்லது இந்த file 20 MB வரம்பை மீறியிருக்கலாம். Get TG File மூலம் Telegram-ல் பெறலாம்.';}
+      else{video.pause();video.removeAttribute('src');video.load();note.textContent=linkError?'Streaming link error: '+linkError:'Stream link கிடைக்கவில்லை. Get TG File மூலம் Telegram-ல் பெறலாம்.';}
       const actions=document.getElementById('stream-actions-dynamic');
       if(actions) actions.remove();
       const box=document.createElement('div');box.id='stream-actions-dynamic';box.className='stream-actions';
