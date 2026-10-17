@@ -283,11 +283,6 @@
   </footer>
 
   <script>
-    // STEP: Replace these two placeholders with your Supabase Project URL and
-    // Publishable (or legacy anon/public) key. Never put a service_role/secret key here.
-    const SUPABASE_URL = "https://oktfkyebljkyarmccopf.supabase.co";
-    const SUPABASE_KEY = "sb_publishable_lRnjJkHrqwbjgwz7Qtav4A_ltn0EJ5I";
-
     const grid = document.getElementById("content-grid");
     const search = document.getElementById("search");
     const empty = document.getElementById("empty-message");
@@ -297,121 +292,71 @@
     let items = [];
     let loadingError = false;
 
-    function telegramPostUrl(item) {
-      const messageId = item.telegram_message_id;
-      const chatId = String(item.telegram_chat_id || "");
-      if (!messageId || !chatId) return "";
-
-      // Private Telegram channel links generally use t.me/c/<channel-id>/<message-id>.
-      const internalChannelId = chatId.replace(/^-100/, "").replace(/^-/, "");
-      return "https://t.me/c/" + internalChannelId + "/" + messageId;
-    }
-
     function mapRow(row) {
       const title = row.title || row.filename || row.caption || "Untitled";
-      const seasonText = row.season ? String(row.season) : "";
-      const episodeText = row.episode ? "Episode " + row.episode : "";
-      const qualityText = row.quality || "";
-      const audioText = row.audio || "";
-      const metaParts = [seasonText, episodeText, qualityText, audioText].filter(Boolean);
-
+      const seasonText = row.season || "";
+      const episodeText = row.episode || "";
+      const metaParts = [seasonText, episodeText, row.quality || "", row.audio || ""].filter(Boolean);
+      const poster = row.poster_url || row.thumbnail_url || "";
       return {
         title,
         category: row.category || "Anime",
         season: metaParts.join(" • ") || "Recently added",
-        language: audioText || "Details available on Telegram",
-        image: "https://placehold.co/300x400/152338/00ffd5?text=" +
-          encodeURIComponent(title.slice(0, 35)),
-        url: telegramPostUrl(row)
+        language: row.audio || "Details available on Telegram",
+        image: poster || "https://placehold.co/300x400/152338/00ffd5?text=" + encodeURIComponent(title.slice(0, 35)),
+        url: row.watching_url || row.telegram_url || ""
       };
     }
 
     async function loadMovies() {
-      if (
-        SUPABASE_URL.includes("https://oktfkyebljkyarmccopf.supabase.co") ||
-        SUPABASE_KEY.includes("sb_publishable_lRnjJkHrqwbjgwz7Qtav4A_ltn0EJ5I")
-      ) {
-        loadingError = true;
-        empty.textContent = "Supabase connection setup pending. Add your Project URL and publishable/anon key in index.html.";
-        renderItems();
-        return;
-      }
-
       try {
-        const endpoint = SUPABASE_URL.replace(/\/$/, "") +
-          "/rest/v1/yogi_files?select=title,filename,caption,category,season,episode,quality,audio,telegram_chat_id,telegram_message_id,created_at&order=created_at.desc";
-
-        const response = await fetch(endpoint, {
-          headers: {
-            "apikey": SUPABASE_KEY,
-            "Authorization": "Bearer " + SUPABASE_KEY
-          }
-        });
-
-        if (!response.ok) {
-          const detail = await response.text();
-          throw new Error("Supabase returned " + response.status + ": " + detail);
-        }
-
+        const response = await fetch("/api/public-posts", { cache: "no-store" });
+        if (!response.ok) throw new Error("Website API returned " + response.status);
         const rows = await response.json();
+        if (!Array.isArray(rows)) throw new Error("API response is not a list");
         items = rows.map(mapRow);
         loadingError = false;
         renderItems();
       } catch (error) {
-        console.error("Could not load movies from Supabase:", error);
+        console.error("Could not load website posts:", error);
         loadingError = true;
-        empty.textContent = "Could not load titles. Check the Supabase URL, public key, table columns, and read policy.";
+        empty.textContent = "Titles load ஆகவில்லை. Website API /api/public-posts-ஐ சரிபார்க்கவும்.";
         renderItems();
       }
     }
 
     function renderItems() {
       const query = search.value.trim().toLowerCase();
-
       const filtered = items.filter(item => {
-        const matchesCategory =
-          activeCategory === "All" || item.category === activeCategory;
-        const matchesSearch =
-          (item.title + " " + item.category + " " + item.season + " " + item.language)
-            .toLowerCase().includes(query);
-        return matchesCategory && matchesSearch;
+        const matchesCategory = activeCategory === "All" || item.category === activeCategory;
+        const haystack = (item.title + " " + item.category + " " + item.season + " " + item.language).toLowerCase();
+        return matchesCategory && haystack.includes(query);
       });
-
       grid.replaceChildren();
-
       filtered.forEach(item => {
         const card = document.createElement("article");
         card.className = "card";
-
         const img = document.createElement("img");
         img.className = "poster";
         img.src = item.image;
         img.alt = item.title + " poster";
         img.loading = "lazy";
-        img.onerror = () => {
-          img.onerror = null;
-          img.src = "https://placehold.co/300x400/152338/ffffff?text=TCR";
-        };
+        img.onerror = () => { img.onerror = null; img.src = "https://placehold.co/300x400/152338/ffffff?text=TCR"; };
 
         const content = document.createElement("div");
         content.className = "card-content";
-
         const tag = document.createElement("span");
         tag.className = "tag";
         tag.textContent = item.category;
-
         const title = document.createElement("h3");
         title.textContent = item.title;
-
         const meta = document.createElement("p");
         meta.className = "meta";
         meta.textContent = item.season + " • " + item.language;
-
         const link = document.createElement("a");
         link.className = "details-btn";
-        link.textContent = item.url ? "View on Telegram" : "Link not available";
-
-        if (item.url && /^https:\/\/t\.me\//i.test(item.url)) {
+        link.textContent = item.url ? "Watch / View Details" : "Link not available";
+        if (item.url && /^https?:\/\//i.test(item.url)) {
           link.href = item.url;
           link.target = "_blank";
           link.rel = "noopener noreferrer";
@@ -419,40 +364,32 @@
           link.href = "#";
           link.addEventListener("click", event => {
             event.preventDefault();
-            alert("இந்த title-க்கான Telegram post link database-ல் கிடைக்கவில்லை.");
+            alert("இந்த title-க்கான viewing link database-ல் இன்னும் சேர்க்கப்படவில்லை.");
           });
         }
-
         content.append(tag, title, meta, link);
         card.append(img, content);
         grid.appendChild(card);
       });
-
       if (filtered.length) {
         empty.style.display = "none";
       } else {
         empty.style.display = "block";
-        if (!loadingError) {
-          empty.textContent = items.length
-            ? "No titles found. Try another search."
-            : "No movies found in Supabase yet.";
-        }
+        if (!loadingError) empty.textContent = items.length ? "No titles found. Try another search." : "இன்னும் posts இல்லை. Telegram file-கள் public API-க்கு இணைக்கப்பட்டுள்ளனவா என்று பார்க்கவும்.";
       }
     }
 
-    buttons.forEach(button => {
-      button.addEventListener("click", () => {
-        activeCategory = button.dataset.category;
-        buttons.forEach(b => b.classList.remove("active"));
-        button.classList.add("active");
-        renderItems();
-      });
-    });
-
+    buttons.forEach(button => button.addEventListener("click", () => {
+      activeCategory = button.dataset.category;
+      buttons.forEach(b => b.classList.remove("active"));
+      button.classList.add("active");
+      renderItems();
+    }));
     search.addEventListener("input", renderItems);
     document.getElementById("year").textContent = new Date().getFullYear();
-
     loadMovies();
+    // Refresh automatically so newly published Telegram files appear without manual reload.
+    setInterval(loadMovies, 60000);
   </script>
 </body>
 </html>
