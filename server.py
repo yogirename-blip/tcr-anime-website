@@ -16,6 +16,8 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
 ADMIN_PASSWORD_HASH = os.environ.get("ADMIN_PASSWORD_HASH", "") or (generate_password_hash(ADMIN_PASSWORD) if ADMIN_PASSWORD else "")
 ADMIN_EMAILS = [e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()]
 MEDIA_BOT_USERNAME = os.environ.get("MEDIA_BOT_USERNAME", "").strip().lstrip("@")
+STREAMING_SERVICE_URL = os.environ.get("STREAMING_SERVICE_URL", "").strip().rstrip("/")
+STREAM_ADMIN_KEY = os.environ.get("STREAM_ADMIN_KEY", "").strip()
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 stream_signer = URLSafeTimedSerializer(app.secret_key, salt="tcr-stream-v1")
 if not all([app.secret_key, DATABASE_URL, SUPER_ADMIN_EMAIL, ADMIN_PASSWORD_HASH]):
@@ -197,6 +199,34 @@ def watch(pid):
     target=row["watching_url"] or row["short_url"]
     return redirect(target,302) if target.startswith(("https://","http://")) else ("Watching URL not configured",404)
 
+@app.get("/api/stream-link/<int:file_id>")
+def create_stream_service_link(file_id):
+    """Create short-lived signed watch/download links using the separate MTProto service."""
+    if not STREAMING_SERVICE_URL or not STREAM_ADMIN_KEY:
+        return jsonify(error="Streaming service is not configured on the website"), 503
+    with db() as conn:
+        with conn.cursor() as c:
+            c.execute("SELECT telegram_chat_id,telegram_message_id FROM yogi_files WHERE id=%s", (file_id,))
+            row = c.fetchone()
+    if not row or not row.get("telegram_message_id") or not str(row.get("telegram_chat_id") or "").lstrip("-").isdigit():
+        return jsonify(error="This file has no numeric Telegram channel/message reference"), 404
+    try:
+        response = httpx.post(
+            STREAMING_SERVICE_URL + "/api/link",
+            headers={"X-Admin-Key": STREAM_ADMIN_KEY},
+            json={"chat_id": int(row["telegram_chat_id"]), "message_id": int(row["telegram_message_id"]), "mode": "watch"},
+            timeout=15.0,
+        )
+        if response.status_code >= 400:
+            app.logger.error("Streaming service link API returned %s", response.status_code)
+            return jsonify(error="Streaming service could not create links", upstream_status=response.status_code), 502
+        data = response.json()
+        return jsonify(ok=True, watch_url=data.get("watch_url"), download_url=data.get("download_url"))
+    except Exception:
+        app.logger.exception("Streaming service link request failed")
+        return jsonify(error="Could not contact streaming service"), 502
+
+
 @app.route("/stream/<token>", methods=["GET", "HEAD"])
 def stream_telegram_file(token):
     """Short-lived signed proxy for Telegram Bot API files. Cloud Bot API files are limited to 20 MB."""
@@ -340,9 +370,12 @@ def public_rows():
                 elif mid and chat.lstrip('-').isdigit():
                     url=f"https://t.me/c/{chat.removeprefix('-100').removeprefix('-')}/{mid}"
                 token = stream_signer.dumps(int(row['id']))
+                # The browser asks our Flask backend for signed MTProto URLs only when a file is selected.
+                # This avoids creating hundreds of remote links for every homepage request.
+                stream_service_url = f"/api/stream-link/{int(row['id'])}" if STREAMING_SERVICE_URL and STREAM_ADMIN_KEY and mid and chat.lstrip('-').isdigit() else ''
                 stream_url = f"/stream/{token}" if BOT_TOKEN and row.get('telegram_file_id') else ''
                 tg_deep_link = f"https://t.me/{MEDIA_BOT_USERNAME}?start=file_{row['id']}" if MEDIA_BOT_USERNAME else url
-                row.update(source_type='telegram',display_title=title,category=category_for(row,title),description=row.get('overview') or row.get('caption') or '',watching_url=tg_deep_link,telegram_url=tg_deep_link,play_url=stream_url,download_url=stream_url)
+                row.update(source_type='telegram',display_title=title,category=category_for(row,title),description=row.get('overview') or row.get('caption') or '',watching_url=tg_deep_link,telegram_url=tg_deep_link,play_url=stream_url,download_url=stream_url,stream_service_url=stream_service_url)
                 rows.append(row)
             # New standalone bot stores uploads in tcr_media_files. Read it separately
             # so the existing website tables and older bot records remain untouched.
@@ -447,4 +480,5 @@ def public_series_detail(slug):
 
 with app.app_context(): init_db()
 if __name__=="__main__": app.run(host="0.0.0.0",port=int(os.environ.get("PORT","10000")))
+
     
