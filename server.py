@@ -13,6 +13,7 @@ SUPER_ADMIN_EMAIL = os.environ.get("SUPER_ADMIN_EMAIL", "").strip().lower()
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
 ADMIN_PASSWORD_HASH = os.environ.get("ADMIN_PASSWORD_HASH", "") or (generate_password_hash(ADMIN_PASSWORD) if ADMIN_PASSWORD else "")
 ADMIN_EMAILS = [e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()]
+MEDIA_BOT_USERNAME = os.environ.get("MEDIA_BOT_USERNAME", "").strip().lstrip("@")
 if not all([app.secret_key, DATABASE_URL, SUPER_ADMIN_EMAIL, ADMIN_PASSWORD_HASH]):
     raise RuntimeError("Set FLASK_SECRET_KEY, DATABASE_URL, SUPER_ADMIN_EMAIL, and either ADMIN_PASSWORD or ADMIN_PASSWORD_HASH in Render.")
 
@@ -268,6 +269,29 @@ def public_rows():
                     url=f"https://t.me/c/{chat.removeprefix('-100').removeprefix('-')}/{mid}"
                 row.update(source_type='telegram',display_title=title,category=category_for(row,title),description=row.get('overview') or row.get('caption') or '',watching_url=url,telegram_url=url)
                 rows.append(row)
+            # New standalone bot stores uploads in tcr_media_files. Read it separately
+            # so the existing website tables and older bot records remain untouched.
+            try:
+                c.execute("""SELECT id,filename,title,caption,media_type,file_size,season,episode,quality,audio,play_url,watching_url,download_url,created_at
+                             FROM tcr_media_files WHERE is_active=TRUE ORDER BY created_at DESC LIMIT 1000""")
+                for item in c.fetchall():
+                    title=clean_display_title(item.get('title')) or clean_display_title(item.get('filename')) or 'Untitled'
+                    raw=' '.join(str(item.get(k) or '') for k in ('filename','caption','title'))
+                    cat='Movies' if re.search(r'\b(?:19|20)\d{2}\b', title) and not re.search(r'(?i)\bS\d{1,2}E\d{1,3}\b|\bSeason\s*\d+\b', raw) else 'Anime'
+                    if re.search(r'(?i)\b(?:web series|season\s*\d+)\b', raw): cat='Web Series' if 'web series' in raw.lower() else 'Anime'
+                    sn=item.get('season'); en=item.get('episode')
+                    deep_link=f"https://t.me/{MEDIA_BOT_USERNAME}?start=file_{item['id']}" if MEDIA_BOT_USERNAME else ''
+                    row={'id':item['id'],'filename':item.get('filename') or '', 'title':title, 'caption':item.get('caption') or '',
+                         'source_caption':title, 'category':cat, 'season':str(sn) if sn else '', 'episode':str(en) if en else '',
+                         'quality':item.get('quality') or 'Unknown', 'audio':item.get('audio') or 'Unknown', 'file_size':item.get('file_size'),
+                         'created_at':item.get('created_at'), 'poster_url':'', 'overview':'', 'tmdb_id':None, 'tmdb_media_type':None,
+                         'source_type':'new_bot', 'display_title':title, 'description':item.get('caption') or '',
+                         'watching_url':deep_link, 'telegram_url':deep_link, 'play_url':item.get('play_url') or '',
+                         'download_url':item.get('download_url') or ''}
+                    rows.append(row)
+            except Exception:
+                # Bot may not have created its table yet; existing site stays online.
+                pass
     rows.sort(key=lambda x:str(x.get('created_at') or ''),reverse=True)
     return rows
 
@@ -317,7 +341,7 @@ def group_rows(rows):
             ep_title=f'Episode {en:02d}' if en else (str(row.get('episode') or '').strip() or ('Movie' if cat=='Movies' else 'Episode not identified'))
             episode={'_key':episode_key,'season_number':sn,'episode_number':en,'title':ep_title,'variants':[]}
             g['episodes'].append(episode)
-        variant={'id':row.get('id'),'quality':str(row.get('quality') or 'Quality not specified').strip(),'audio':str(row.get('audio') or 'Audio not specified').strip(),'file_size':row.get('file_size'),'watching_url':row.get('watching_url') or row.get('telegram_url') or '', 'filename':row.get('filename') or '', 'created_at':row.get('created_at')}
+        variant={'id':row.get('id'),'quality':str(row.get('quality') or 'Quality not specified').strip(),'audio':str(row.get('audio') or 'Audio not specified').strip(),'file_size':row.get('file_size'),'watching_url':row.get('watching_url') or row.get('telegram_url') or '', 'play_url':row.get('play_url') or '', 'download_url':row.get('download_url') or '', 'filename':row.get('filename') or '', 'created_at':row.get('created_at')}
         # Distinct qualities/audio variants are kept, exact duplicate imports are removed.
         unique=(variant['watching_url'],variant['quality'].lower(),variant['audio'].lower(),variant['filename'].lower())
         if not any((v.get('watching_url'),str(v.get('quality') or '').lower(),str(v.get('audio') or '').lower(),str(v.get('filename') or '').lower())==unique for v in episode['variants']):
@@ -348,4 +372,5 @@ def public_series_detail(slug):
 
 with app.app_context(): init_db()
 if __name__=="__main__": app.run(host="0.0.0.0",port=int(os.environ.get("PORT","10000")))
-      
+
+    
