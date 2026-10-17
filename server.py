@@ -177,10 +177,45 @@ def watch(pid):
     return redirect(target,302) if target.startswith(("https://","http://")) else ("Watching URL not configured",404)
 @app.get("/api/public-posts")
 def public_posts():
+    rows = []
     with db() as conn:
-        with conn.cursor() as c: c.execute("SELECT id,title,category,description,poster_url,season,episode,quality,audio,created_at FROM tcr_posts WHERE status='published' ORDER BY created_at DESC LIMIT 200"); rows=c.fetchall()
-    for r in rows: r["watching_url"]="/watch/"+str(r["id"])
-    return jsonify(rows)
+        with conn.cursor() as c:
+            c.execute("SELECT id,title,category,description,poster_url,season,episode,quality,audio,created_at FROM tcr_posts WHERE status='published' ORDER BY created_at DESC LIMIT 200")
+            rows.extend(c.fetchall())
+            # Telegram bot files are saved separately in yogi_files. Include them in the public feed too.
+            try:
+                c.execute("SELECT id,filename,title,caption,category,season,episode,quality,audio,telegram_chat_id,telegram_message_id,created_at FROM yogi_files ORDER BY created_at DESC LIMIT 200")
+                bot_rows = c.fetchall()
+                for r in bot_rows:
+                    title = r.get("title") or r.get("filename") or r.get("caption") or "Untitled"
+                    chat_id = str(r.get("telegram_chat_id") or "")
+                    message_id = r.get("telegram_message_id")
+                    telegram_url = ""
+                    if message_id and chat_id:
+                        if chat_id.startswith("@"):
+                            telegram_url = "https://t.me/" + chat_id[1:] + "/" + str(message_id)
+                        elif chat_id.lstrip("-").isdigit():
+                            channel_id = chat_id.removeprefix("-100").removeprefix("-")
+                            telegram_url = "https://t.me/c/" + channel_id + "/" + str(message_id)
+                    rows.append({
+                        "id": "telegram-" + str(r.get("id")),
+                        "title": title,
+                        "category": r.get("category") or "Anime",
+                        "description": r.get("caption") or "",
+                        "poster_url": "",
+                        "season": r.get("season") or "",
+                        "episode": r.get("episode") or "",
+                        "quality": r.get("quality") or "",
+                        "audio": r.get("audio") or "",
+                        "created_at": r.get("created_at"),
+                        "watching_url": telegram_url,
+                        "telegram_url": telegram_url
+                    })
+            except Exception:
+                # Keep manually published posts working if the bot table is unavailable.
+                pass
+    rows.sort(key=lambda r: str(r.get("created_at") or ""), reverse=True)
+    return jsonify(rows[:300])
 with app.app_context(): init_db()
 if __name__=="__main__": app.run(host="0.0.0.0",port=int(os.environ.get("PORT","10000")))
       
