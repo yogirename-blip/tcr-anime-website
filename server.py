@@ -449,7 +449,7 @@ def group_rows(rows):
             ep_title=f'Episode {en:02d}' if en else (str(row.get('episode') or '').strip() or ('Movie' if cat=='Movies' else 'Episode not identified'))
             episode={'_key':episode_key,'season_number':sn,'episode_number':en,'title':ep_title,'variants':[]}
             g['episodes'].append(episode)
-        variant={'id':row.get('id'),'quality':str(row.get('quality') or 'Quality not specified').strip(),'audio':str(row.get('audio') or 'Audio not specified').strip(),'file_size':row.get('file_size'),'watching_url':row.get('watching_url') or row.get('telegram_url') or '', 'play_url':row.get('play_url') or '', 'download_url':row.get('download_url') or '', 'filename':row.get('filename') or '', 'created_at':row.get('created_at')}
+        variant={'id':row.get('id'),'quality':str(row.get('quality') or 'Quality not specified').strip(),'audio':str(row.get('audio') or 'Audio not specified').strip(),'file_size':row.get('file_size'),'watching_url':row.get('watching_url') or row.get('telegram_url') or '', 'play_url':row.get('play_url') or '', 'download_url':row.get('download_url') or '', 'stream_service_url':row.get('stream_service_url') or '', 'filename':row.get('filename') or '', 'created_at':row.get('created_at')}
         # Distinct qualities/audio variants are kept, exact duplicate imports are removed.
         unique=(variant['watching_url'],variant['quality'].lower(),variant['audio'].lower(),variant['filename'].lower())
         if not any((v.get('watching_url'),str(v.get('quality') or '').lower(),str(v.get('audio') or '').lower(),str(v.get('filename') or '').lower())==unique for v in episode['variants']):
