@@ -368,8 +368,14 @@
           if(linkResponse.ok && linkData.ok){
             v.play_url = linkData.watch_url || "";
             v.download_url = linkData.download_url || "";
-          } else { console.warn("Streaming link API error", linkData.error || linkResponse.status); }
-        } catch(err) { console.warn("Streaming service unavailable", err); }
+          } else {
+            console.warn("Streaming link API error", linkData.error || linkResponse.status);
+            v._stream_error = linkData.error || ('Streaming link API returned HTTP ' + linkResponse.status);
+          }
+        } catch(err) {
+          console.warn("Streaming service unavailable", err);
+          v._stream_error = 'Streaming Service-ஐ தொடர்புகொள்ள முடியவில்லை. Render URL / Logs சரிபார்க்கவும்.';
+        }
       }
       const direct=v.play_url||v.stream_url||v.video_url||'';
       const download=v.download_url||'';
@@ -381,13 +387,13 @@
       const isDirect=validHttp(direct)&&!/t\.me\//i.test(direct);
       modal.classList.add('open');
       if(isDirect){video.src=direct;note.textContent='இப்போது: '+title+' · '+episode+' · '+quality+' — Video playback URL பயன்படுத்தப்படுகிறது.';video.load();}
-      else{video.pause();video.removeAttribute('src');video.load();note.textContent='இந்த file-க்கு நேரடி streaming URL இன்னும் அமைக்கப்படவில்லை. Telegram link மட்டும் இருந்தால் browser player-ல் video ஓடாது. கீழே உள்ள Get TG File மூலம் bot-ல் பெறலாம்.';}
+      else{video.pause();video.removeAttribute('src');video.load();note.textContent=v._stream_error ? ('Streaming Error: '+v._stream_error) : 'இந்த file-க்கு Streaming URL கிடைக்கவில்லை. Database-ல் telegram_chat_id / telegram_message_id மற்றும் Render-ல் STREAMING_SERVICE_URL / STREAM_ADMIN_KEY சரியாக உள்ளதா பார்க்கவும்.';}
       const actions=document.getElementById('stream-actions-dynamic');
       if(actions) actions.remove();
       const box=document.createElement('div');box.id='stream-actions-dynamic';box.className='stream-actions';
       const add=(label,cls,fn)=>{const b=document.createElement('button');b.type='button';b.className='stream-btn '+(cls||'');b.textContent=label;b.addEventListener('click',fn);box.append(b);};
       add('Get TG File','blue',()=>{if(validHttp(tg))window.open(tg,'_blank','noopener');else alert('Telegram file link கிடைக்கவில்லை.');});
-      add('Download','primary',()=>{if(validHttp(download))window.open(download,'_blank','noopener');else if(isDirect)window.open(direct,'_blank','noopener');else alert('Download URL இன்னும் அமைக்கப்படவில்லை.');});
+      add('Download','primary',()=>{if(validHttp(download))window.open(download,'_blank','noopener');else if(isDirect)window.open(direct,'_blank','noopener');else alert(v._stream_error ? ('Download Error: '+v._stream_error) : 'Download URL இல்லை. Streaming Service link உருவாக்கப்படவில்லை. Database Telegram chat/message ID மற்றும் Render Environment அமைப்புகளைச் சரிபார்க்கவும்.');});
       add('Copy Link','',async()=>{const u=isDirect?direct:(validHttp(tg)?tg:'');if(!u){alert('Copy செய்ய link இல்லை.');return;}try{await navigator.clipboard.writeText(u);alert('Link copied!');}catch(e){prompt('Copy link:',u);}});
       add('VLC','orange',()=>{if(isDirect)location.href='vlc://'+direct.replace(/^https?:\/\//i,'');else alert('VLC-க்கு நேரடி video URL தேவை.');});
       add('MX','blue',()=>{if(isDirect)location.href='intent:'+direct.replace(/^https?:\/\//i,'')+'#Intent;package=com.mxtech.videoplayer.ad;type=video/*;scheme=https;end';else alert('MX Player-க்கு நேரடி video URL தேவை.');});
