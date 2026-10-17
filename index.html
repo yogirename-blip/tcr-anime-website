@@ -207,6 +207,11 @@
       border-radius: 8px;
     }
 
+    #detail-content{display:grid;grid-template-columns:minmax(110px,180px) 1fr;gap:16px;align-items:start}
+    #detail-content img{width:100%;aspect-ratio:3/4;object-fit:cover;border-radius:12px;background:#152338}
+    #detail-content p{color:var(--muted);font-size:13px;line-height:1.7;margin-top:10px;overflow-wrap:anywhere}
+    .episode-row{display:flex;justify-content:space-between;align-items:center;gap:12px;background:var(--card);border:1px solid #243344;border-radius:12px;padding:13px;margin-bottom:10px}
+    .episode-row h3{font-size:14px;line-height:1.5}.episode-row p{font-size:12px;color:var(--muted);line-height:1.6;margin-top:5px}
     .empty {
       display: none;
       color: var(--muted);
@@ -271,9 +276,9 @@
   </section>
 
   <main>
-    <h2 class="section-title">Latest <span>Updates</span></h2>
-    <div class="grid" id="content-grid"></div>
-    <p class="empty" id="empty-message">No titles found. Try another search.</p>
+    <section id="list-view"><h2 class="section-title">Latest <span>Updates</span></h2>
+    <div class="grid" id="content-grid"></div><p class="empty" id="empty-message">No titles found. Try another search.</p></section>
+    <section id="detail-view" style="display:none"><button class="nav-btn" id="back-button">← All titles</button><div id="detail-content" style="margin:18px 0"></div><h2 class="section-title">Episodes / Files <span id="episode-count"></span></h2><div id="episode-list"></div></section>
   </main>
 
   <footer>
@@ -283,113 +288,37 @@
   </footer>
 
   <script>
-    const grid = document.getElementById("content-grid");
-    const search = document.getElementById("search");
-    const empty = document.getElementById("empty-message");
-    const buttons = document.querySelectorAll(".nav-btn");
-
-    let activeCategory = "All";
-    let items = [];
-    let loadingError = false;
-
-    function mapRow(row) {
-      const title = row.title || row.filename || row.caption || "Untitled";
-      const seasonText = row.season || "";
-      const episodeText = row.episode || "";
-      const metaParts = [seasonText, episodeText, row.quality || "", row.audio || ""].filter(Boolean);
-      const poster = row.poster_url || row.thumbnail_url || "";
-      return {
-        title,
-        category: row.category || "Anime",
-        season: metaParts.join(" • ") || "Recently added",
-        language: row.audio || "Details available on Telegram",
-        image: poster || "https://placehold.co/300x400/152338/00ffd5?text=" + encodeURIComponent(title.slice(0, 35)),
-        url: row.watching_url || row.telegram_url || ""
-      };
-    }
-
-    async function loadMovies() {
-      try {
-        const response = await fetch("/api/public-posts", { cache: "no-store" });
-        if (!response.ok) throw new Error("Website API returned " + response.status);
-        const rows = await response.json();
-        if (!Array.isArray(rows)) throw new Error("API response is not a list");
-        items = rows.map(mapRow);
-        loadingError = false;
-        renderItems();
-      } catch (error) {
-        console.error("Could not load website posts:", error);
-        loadingError = true;
-        empty.textContent = "Titles load ஆகவில்லை. Website API /api/public-posts-ஐ சரிபார்க்கவும்.";
-        renderItems();
-      }
-    }
-
-    function renderItems() {
-      const query = search.value.trim().toLowerCase();
-      const filtered = items.filter(item => {
-        const matchesCategory = activeCategory === "All" || item.category === activeCategory;
-        const haystack = (item.title + " " + item.category + " " + item.season + " " + item.language).toLowerCase();
-        return matchesCategory && haystack.includes(query);
-      });
+    const grid=document.getElementById('content-grid'), search=document.getElementById('search'), empty=document.getElementById('empty-message');
+    const buttons=[...document.querySelectorAll('.nav-btn')]; let groups=[],activeCategory='All';
+    const fallback='https://placehold.co/300x400/152338/00ffd5?text=TCR+YOGI';
+    const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const poster=(url,title)=>url&&/^https?:\/\//i.test(url)?url:'https://placehold.co/300x400/152338/00ffd5?text='+encodeURIComponent(title||'TCR+YOGI');
+    function renderItems(){
+      const q=search.value.trim().toLowerCase();
+      const list=groups.filter(x=>(activeCategory==='All'||x.category===activeCategory)&&((x.title+' '+x.category+' '+x.season+' '+(x.audios||[]).join(' ')).toLowerCase().includes(q)));
       grid.replaceChildren();
-      filtered.forEach(item => {
-        const card = document.createElement("article");
-        card.className = "card";
-        const img = document.createElement("img");
-        img.className = "poster";
-        img.src = item.image;
-        img.alt = item.title + " poster";
-        img.loading = "lazy";
-        img.onerror = () => { img.onerror = null; img.src = "https://placehold.co/300x400/152338/ffffff?text=TCR"; };
-
-        const content = document.createElement("div");
-        content.className = "card-content";
-        const tag = document.createElement("span");
-        tag.className = "tag";
-        tag.textContent = item.category;
-        const title = document.createElement("h3");
-        title.textContent = item.title;
-        const meta = document.createElement("p");
-        meta.className = "meta";
-        meta.textContent = item.season + " • " + item.language;
-        const link = document.createElement("a");
-        link.className = "details-btn";
-        link.textContent = item.url ? "Watch / View Details" : "Link not available";
-        if (item.url && /^https?:\/\//i.test(item.url)) {
-          link.href = item.url;
-          link.target = "_blank";
-          link.rel = "noopener noreferrer";
-        } else {
-          link.href = "#";
-          link.addEventListener("click", event => {
-            event.preventDefault();
-            alert("இந்த title-க்கான viewing link database-ல் இன்னும் சேர்க்கப்படவில்லை.");
-          });
-        }
-        content.append(tag, title, meta, link);
-        card.append(img, content);
-        grid.appendChild(card);
-      });
-      if (filtered.length) {
-        empty.style.display = "none";
-      } else {
-        empty.style.display = "block";
-        if (!loadingError) empty.textContent = items.length ? "No titles found. Try another search." : "இன்னும் posts இல்லை. Telegram file-கள் public API-க்கு இணைக்கப்பட்டுள்ளனவா என்று பார்க்கவும்.";
-      }
+      list.forEach(item=>{
+        const card=document.createElement('article');card.className='card';
+        const img=document.createElement('img');img.className='poster';img.src=poster(item.poster_url,item.title);img.alt=item.title+' poster';img.loading='lazy';img.onerror=()=>{img.onerror=null;img.src=fallback;};
+        const content=document.createElement('div');content.className='card-content';
+        const tag=document.createElement('span');tag.className='tag';tag.textContent=item.category||'Anime';
+        const title=document.createElement('h3');title.textContent=item.title+(item.season?' '+item.season:'');
+        const meta=document.createElement('p');meta.className='meta';const bits=[(item.episode_count||0)+' episode/file'+((item.episode_count||0)===1?'':'s')];if(item.qualities?.length)bits.push(item.qualities.join(', '));if(item.audios?.length)bits.push(item.audios.join(', '));meta.textContent=bits.join(' • ');
+        const link=document.createElement('a');link.className='details-btn';link.textContent='View Episodes / Details';link.href='?title='+encodeURIComponent(item.slug);
+        content.append(tag,title,meta,link);card.append(img,content);grid.append(card);
+      });empty.style.display=list.length?'none':'block';
     }
-
-    buttons.forEach(button => button.addEventListener("click", () => {
-      activeCategory = button.dataset.category;
-      buttons.forEach(b => b.classList.remove("active"));
-      button.classList.add("active");
-      renderItems();
-    }));
-    search.addEventListener("input", renderItems);
-    document.getElementById("year").textContent = new Date().getFullYear();
-    loadMovies();
-    // Refresh automatically so newly published Telegram files appear without manual reload.
-    setInterval(loadMovies, 60000);
+    function renderDetail(g){
+      document.getElementById('list-view').style.display='none';document.querySelector('.hero').style.display='none';document.getElementById('detail-view').style.display='block';
+      const cover=poster(g.poster_url,g.title);
+      document.getElementById('detail-content').innerHTML='<img src="'+esc(cover)+'" alt="'+esc(g.title)+' poster" onerror="this.onerror=null;this.src=\''+fallback+'\'"><div><span class="tag">'+esc(g.category)+'</span><h1>'+esc(g.title)+(g.season?' <span style="color:var(--green)">'+esc(g.season)+'</span>':'')+'</h1><p>'+esc(g.description||'')+'</p><p>'+esc([...(g.qualities||[]),...(g.audios||[])].join(' • '))+'</p></div>';
+      const list=document.getElementById('episode-list');list.replaceChildren();
+      (g.episodes||[]).forEach((ep,i)=>{const row=document.createElement('article');row.className='episode-row';const info=document.createElement('div');const h=document.createElement('h3');h.textContent=ep.episode||ep.filename||('File '+(i+1));const p=document.createElement('p');const details=[];if(ep.quality)details.push(ep.quality);if(ep.audio)details.push(ep.audio);if(ep.file_size){const n=Number(ep.file_size);details.push(n>1073741824?(n/1073741824).toFixed(2)+' GB':n>1048576?(n/1048576).toFixed(1)+' MB':'File size available');}p.textContent=details.join(' • ');info.append(h,p);const a=document.createElement('a');a.className='details-btn';a.textContent='Open';const url=ep.watching_url||ep.telegram_url||'';if(url&&/^https?:\/\//i.test(url)){a.href=url;a.target='_blank';a.rel='noopener noreferrer';}else{a.href='#';a.textContent='Link unavailable';}row.append(info,a);list.append(row);});
+      document.getElementById('episode-count').textContent='('+((g.episodes||[]).length)+')';
+    }
+    async function load(){try{const r=await fetch('/api/public-posts',{cache:'no-store'});if(!r.ok)throw Error('API '+r.status);groups=await r.json();const slug=new URLSearchParams(location.search).get('title');if(slug){const d=await fetch('/api/public-posts/'+encodeURIComponent(slug),{cache:'no-store'});if(d.ok){renderDetail(await d.json());return;}}renderItems();}catch(e){empty.style.display='block';empty.textContent='Could not load titles. Please refresh.';}}
+    buttons.forEach(b=>b.addEventListener('click',()=>{activeCategory=b.dataset.category;buttons.forEach(x=>x.classList.toggle('active',x===b));renderItems();}));
+    search.addEventListener('input',renderItems);document.getElementById('back-button').addEventListener('click',()=>location.href=location.pathname);document.getElementById('year').textContent=new Date().getFullYear();load();
   </script>
 </body>
 </html>
