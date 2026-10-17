@@ -216,12 +216,20 @@ def clean_display_title(value):
 def extract_title(row):
     source = str(row.get('source_caption') or row.get('caption') or '')
     first = next((line.strip() for line in source.splitlines() if line.strip()), '')
-    # Channel caption release line is more reliable than older bot-generated title fields.
-    candidates = [first, row.get('title'), row.get('filename')]
-    for candidate in candidates:
+    # The channel release line is the source of truth. Take only the show title
+    # before S01E01 / S02EP03, not the episode subtitle or codec tags after it.
+    if first:
+        before_episode = re.split(r'(?i)\bS\d{1,2}\s*E(?:P)?\d{1,3}\b', first, maxsplit=1)[0]
+        cleaned = clean_display_title(before_episode)
+        if cleaned and len(cleaned) >= 2:
+            return cleaned
+    for candidate in (row.get('title'), row.get('filename')):
         cleaned = clean_display_title(candidate)
         if cleaned and len(cleaned) >= 2 and not re.search(r'(?i)\b(?:kbps|x264|x265|1080p|720p|480p)\b', cleaned):
-            return cleaned
+            # Filename can include show title then episode marker and subtitle.
+            cleaned = re.split(r'(?i)\bS\d{1,2}\s*E(?:P)?\d{1,3}\b', cleaned, maxsplit=1)[0].strip(' -_|:;,.')
+            if cleaned:
+                return cleaned
     return 'Untitled'
 
 
@@ -287,27 +295,30 @@ def season_number(row):
 
 
 def group_rows(rows):
-    # One title card per series/movie; audio/quality variants become options inside each episode.
+    # One Home card per show + season. Episode files/ audio/quality versions stay inside it.
     groups={}
     for row in rows:
         cat=row.get('category') or 'Anime'
         title=str(row.get('display_title') or 'Untitled').strip()
-        key=(cat,re.sub(r'[^a-z0-9]+',' ',title.lower()).strip())
+        sn=season_number(row); en=episode_number(row)
+        season_label=f'Season {sn:02d}' if sn else ''
+        norm_title=re.sub(r'[^a-z0-9]+',' ',title.lower()).strip()
+        key=(cat,norm_title,sn if cat!='Movies' else 0)
         if key not in groups:
-            groups[key]={'slug':slugify(title),'title':title,'category':cat,'season':'','description':row.get('overview') or row.get('description') or '', 'poster_url':row.get('poster_url') or '', 'latest_at':str(row.get('created_at') or ''),'episodes':[]}
+            slug=slugify(title + (f' season {sn:02d}' if sn and cat!='Movies' else ''))
+            groups[key]={'slug':slug,'title':title,'category':cat,'season':season_label,'description':row.get('overview') or row.get('description') or '', 'poster_url':row.get('poster_url') or '', 'latest_at':str(row.get('created_at') or ''),'episodes':[]}
         g=groups[key]
         if not g['poster_url'] and row.get('poster_url'): g['poster_url']=row['poster_url']
         if not g['description']: g['description']=row.get('overview') or row.get('description') or ''
         g['latest_at']=max(g['latest_at'],str(row.get('created_at') or ''))
-        # Match season + episode number. Each audio/quality/file remains a variant under that episode.
-        sn=season_number(row); en=episode_number(row)
         episode_key=(sn,en) if en else (sn,0)
         episode=next((e for e in g['episodes'] if e['_key']==episode_key),None)
         if episode is None:
-            episode={'_key':episode_key,'season_number':sn,'episode_number':en,'title':(f'Season {sn:02d} • ' if sn else '')+(f'Episode {en:02d}' if en else (row.get('episode') or row.get('filename') or 'Movie file')),'variants':[]}
+            ep_title=f'Episode {en:02d}' if en else (str(row.get('episode') or '').strip() or ('Movie' if cat=='Movies' else 'Episode not identified'))
+            episode={'_key':episode_key,'season_number':sn,'episode_number':en,'title':ep_title,'variants':[]}
             g['episodes'].append(episode)
-        variant={'id':row.get('id'),'quality':row.get('quality') or 'Quality not specified','audio':row.get('audio') or 'Audio not specified','file_size':row.get('file_size'),'watching_url':row.get('watching_url') or row.get('telegram_url') or '', 'filename':row.get('filename') or '', 'created_at':row.get('created_at')}
-        # Avoid duplicate links/records when the same Telegram message is imported twice.
+        variant={'id':row.get('id'),'quality':str(row.get('quality') or 'Quality not specified').strip(),'audio':str(row.get('audio') or 'Audio not specified').strip(),'file_size':row.get('file_size'),'watching_url':row.get('watching_url') or row.get('telegram_url') or '', 'filename':row.get('filename') or '', 'created_at':row.get('created_at')}
+        # Distinct qualities/audio variants are kept, exact duplicate imports are removed.
         unique=(variant['watching_url'],variant['quality'].lower(),variant['audio'].lower(),variant['filename'].lower())
         if not any((v.get('watching_url'),str(v.get('quality') or '').lower(),str(v.get('audio') or '').lower(),str(v.get('filename') or '').lower())==unique for v in episode['variants']):
             episode['variants'].append(variant)
@@ -315,9 +326,10 @@ def group_rows(rows):
     for g in groups.values():
         g['episodes'].sort(key=lambda e:(e['season_number'],e['episode_number']))
         for e in g['episodes']:
-            e['variants'].sort(key=lambda v:(str(v.get('audio') or ''),str(v.get('quality') or '')))
+            e['variants'].sort(key=lambda v:(str(v.get('audio') or '').lower(),str(v.get('quality') or '').lower()))
         g['episode_count']=len(g['episodes'])
-        g['variant_count']=sum(len(e['variants']) for e in g['episodes'])
+        g['variant_count']=sum(len(e['variants']) for e in
+        g['episodes'])
         result.append(g)
     return sorted(result,key=lambda x:x['latest_at'],reverse=True)
 
