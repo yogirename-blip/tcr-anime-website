@@ -24,6 +24,21 @@ def init_db():
             c.execute("""CREATE TABLE IF NOT EXISTS tcr_admin_users(email TEXT PRIMARY KEY,is_super_admin BOOLEAN NOT NULL DEFAULT FALSE,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())""")
             c.execute("""CREATE TABLE IF NOT EXISTS tcr_posts(id BIGSERIAL PRIMARY KEY,title TEXT NOT NULL,category TEXT NOT NULL DEFAULT 'Anime',description TEXT NOT NULL DEFAULT '',poster_url TEXT NOT NULL DEFAULT '',season TEXT NOT NULL DEFAULT '',episode TEXT NOT NULL DEFAULT '',quality TEXT NOT NULL DEFAULT '',audio TEXT NOT NULL DEFAULT '',telegram_chat_id TEXT NOT NULL DEFAULT '',telegram_message_id TEXT NOT NULL DEFAULT '',watching_url TEXT NOT NULL DEFAULT '',short_url TEXT NOT NULL DEFAULT '',status TEXT NOT NULL DEFAULT 'published',created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())""")
             c.execute("""CREATE TABLE IF NOT EXISTS tcr_admin_urls(id BIGSERIAL PRIMARY KEY,label TEXT NOT NULL,url TEXT NOT NULL,enabled BOOLEAN NOT NULL DEFAULT TRUE,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())""")
+            # Create/upgrade the Telegram files table without deleting existing rows.
+            c.execute("""CREATE TABLE IF NOT EXISTS yogi_files (
+                id BIGSERIAL PRIMARY KEY, filename TEXT, telegram_file_id TEXT, caption TEXT,
+                title TEXT, season TEXT, episode TEXT, quality TEXT, audio TEXT, category TEXT,
+                telegram_chat_id TEXT, telegram_message_id BIGINT, created_at TIMESTAMPTZ DEFAULT NOW()
+            )""")
+            for statement in (
+                "ALTER TABLE yogi_files ADD COLUMN IF NOT EXISTS file_size BIGINT",
+                "ALTER TABLE yogi_files ADD COLUMN IF NOT EXISTS poster_url TEXT",
+                "ALTER TABLE yogi_files ADD COLUMN IF NOT EXISTS overview TEXT",
+                "ALTER TABLE yogi_files ADD COLUMN IF NOT EXISTS tmdb_id BIGINT",
+                "ALTER TABLE yogi_files ADD COLUMN IF NOT EXISTS tmdb_media_type TEXT",
+                "ALTER TABLE yogi_files ADD COLUMN IF NOT EXISTS source_caption TEXT",
+            ):
+                c.execute(statement)
             c.execute("INSERT INTO tcr_admin_users(email,is_super_admin) VALUES(%s,TRUE) ON CONFLICT(email) DO UPDATE SET is_super_admin=TRUE",(SUPER_ADMIN_EMAIL,))
             for e in ADMIN_EMAILS:
                 c.execute("INSERT INTO tcr_admin_users(email,is_super_admin) VALUES(%s,FALSE) ON CONFLICT(email) DO NOTHING",(e,))
@@ -120,7 +135,7 @@ def telegram_files():
     try:
         with db() as conn:
             with conn.cursor() as c:
-                c.execute("SELECT filename,title,category,season,episode,quality,audio,telegram_chat_id,telegram_message_id,created_at FROM yogi_files ORDER BY created_at DESC LIMIT 500"); rows=c.fetchall()
+                c.execute("SELECT filename,title,category,season,episode,quality,audio,telegram_chat_id,telegram_message_id,created_at,file_size,poster_url,overview,tmdb_id,tmdb_media_type,source_caption FROM yogi_files ORDER BY created_at DESC LIMIT 500"); rows=c.fetchall()
         return jsonify(rows)
     except Exception: return jsonify(error="Cannot read yogi_files; check the bot table columns."),500
 @app.get("/api/admins")
@@ -180,14 +195,16 @@ def public_posts():
     rows = []
     with db() as conn:
         with conn.cursor() as c:
-            c.execute("SELECT id,title,category,description,poster_url,season,episode,quality,audio,created_at FROM tcr_posts WHERE status='published' ORDER BY created_at DESC LIMIT 200")
+            c.execute("""SELECT id,title,category,description,poster_url,season,episode,quality,audio,created_at
+                         FROM tcr_posts WHERE status='published' ORDER BY created_at DESC LIMIT 200""")
             rows.extend(c.fetchall())
-            # Telegram bot files are saved separately in yogi_files. Include them in the public feed too.
             try:
-                c.execute("SELECT id,filename,title,caption,category,season,episode,quality,audio,telegram_chat_id,telegram_message_id,created_at FROM yogi_files ORDER BY created_at DESC LIMIT 200")
-                bot_rows = c.fetchall()
-                for r in bot_rows:
-                    title = r.get("title") or r.get("filename") or r.get("caption") or "Untitled"
+                c.execute("""SELECT id,filename,title,caption,category,season,episode,quality,audio,
+                                    telegram_chat_id,telegram_message_id,created_at,file_size,
+                                    poster_url,overview,tmdb_id,tmdb_media_type
+                             FROM yogi_files ORDER BY created_at DESC LIMIT 200""")
+                for r in c.fetchall():
+                    title = r.get("title") or r.get("filename") or "Untitled"
                     chat_id = str(r.get("telegram_chat_id") or "")
                     message_id = r.get("telegram_message_id")
                     telegram_url = ""
@@ -201,21 +218,24 @@ def public_posts():
                         "id": "telegram-" + str(r.get("id")),
                         "title": title,
                         "category": r.get("category") or "Anime",
-                        "description": r.get("caption") or "",
-                        "poster_url": "",
+                        "description": r.get("overview") or r.get("caption") or "",
+                        "poster_url": r.get("poster_url") or "",
                         "season": r.get("season") or "",
                         "episode": r.get("episode") or "",
                         "quality": r.get("quality") or "",
                         "audio": r.get("audio") or "",
+                        "file_size": r.get("file_size"),
+                        "tmdb_id": r.get("tmdb_id"),
+                        "tmdb_media_type": r.get("tmdb_media_type") or "",
                         "created_at": r.get("created_at"),
                         "watching_url": telegram_url,
                         "telegram_url": telegram_url
                     })
             except Exception:
-                # Keep manually published posts working if the bot table is unavailable.
-                pass
+                app.logger.exception("Could not read Telegram files for public feed")
     rows.sort(key=lambda r: str(r.get("created_at") or ""), reverse=True)
     return jsonify(rows[:300])
+
 with app.app_context(): init_db()
 if __name__=="__main__": app.run(host="0.0.0.0",port=int(os.environ.get("PORT","10000")))
       
