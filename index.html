@@ -219,15 +219,15 @@
     .episode-group{background:var(--card);border:1px solid #243344;border-radius:12px;padding:12px;margin-bottom:12px}
     .episode-heading{font-size:16px;margin-bottom:8px}
     .stream-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:16px}
-    /* TCR Stream controls use the same navy + aqua theme as the main website. */
-    .stream-btn{border:1px solid #2a394b;border-radius:12px;padding:13px 8px;text-align:center;text-decoration:none;font-weight:800;color:var(--text);background:#172132;cursor:pointer;font-size:14px;transition:transform .18s,border-color .18s,filter .18s}
-    .stream-btn:hover{border-color:var(--green);filter:brightness(1.08);transform:translateY(-1px)}
-    .stream-btn.primary,.stream-btn.blue,.stream-btn.orange{background:linear-gradient(135deg,var(--green),var(--blue));border-color:var(--green);color:#061411}
-    .stream-player{display:none;background:var(--card);border:1px solid #243344;border-radius:16px;padding:16px;margin:14px 0 18px;overflow:hidden;box-shadow:0 14px 38px #0005}
+    .stream-btn{border:1px solid #493039;border-radius:12px;padding:13px 8px;text-align:center;text-decoration:none;font-weight:800;color:#fff;background:#28161b;cursor:pointer;font-size:14px}
+    .stream-btn.primary{background:linear-gradient(135deg,#e00018,#b90012);border-color:#e00018}
+    .stream-btn.blue{background:linear-gradient(135deg,#078acb,#00669c);border-color:#078acb}
+    .stream-btn.orange{background:linear-gradient(135deg,#ff641e,#e83a10);border-color:#ff641e}
+    .stream-player{display:none;background:#090909;border:1px solid #39232a;border-radius:16px;padding:10px;margin:14px 0 18px;overflow:hidden}
     .stream-player.open{display:block}
-    .stream-player video{display:block;width:100%;max-height:70vh;aspect-ratio:16/9;background:#000;border:1px solid #243344;border-radius:12px}
+    .stream-player video{display:block;width:100%;max-height:70vh;background:#000;border-radius:10px}
     .stream-note{font-size:12px;color:var(--muted);line-height:1.6;margin-top:10px}
-    .stream-size{display:inline-block;margin-top:16px;padding:7px 11px;border:1px solid #2a394b;border-radius:8px;color:var(--text);background:#172132;font-weight:800}
+    .stream-size{display:inline-block;margin-top:16px;padding:7px 11px;border:1px solid #493039;border-radius:8px;color:#ddd;background:#24151a;font-weight:800}
     @media(max-width:380px){.stream-btn{font-size:12px;padding:11px 5px}}
 
     .empty {
@@ -359,23 +359,20 @@
 
     let activeStreamVariant=null;
     function validHttp(u){return typeof u==='string'&&/^https?:\/\//i.test(u)}
-    function absoluteUrl(u){try{return new URL(u,location.origin).href}catch(e){return ''}}
     async function openStreamActions(v,title,episode,quality){
       activeStreamVariant=v||{};
-      let playCandidate=v.play_url||v.stream_url||v.video_url||'';
-      let downloadCandidate=v.download_url||'';
-      let linkError='';
-      if(v.stream_service_url){
-        try{
-          const response=await fetch(v.stream_service_url,{cache:'no-store'});
-          const payload=await response.json();
-          if(!response.ok||!payload.watch_url)throw new Error(payload.error||('HTTP '+response.status));
-          playCandidate=payload.watch_url;
-          downloadCandidate=payload.download_url||'';
-        }catch(err){linkError=String(err.message||err);playCandidate='';downloadCandidate='';}
+      if(v && v.stream_service_url){
+        try {
+          const linkResponse = await fetch(v.stream_service_url, {cache:"no-store"});
+          const linkData = await linkResponse.json();
+          if(linkResponse.ok && linkData.ok){
+            v.play_url = linkData.watch_url || "";
+            v.download_url = linkData.download_url || "";
+          } else { console.warn("Streaming link API error", linkData.error || linkResponse.status); }
+        } catch(err) { console.warn("Streaming service unavailable", err); }
       }
-      const direct=absoluteUrl(playCandidate);
-      const download=absoluteUrl(downloadCandidate);
+      const direct=v.play_url||v.stream_url||v.video_url||'';
+      const download=v.download_url||'';
       const tg=v.telegram_url||v.watching_url||'';
       const filename=v.filename||'';
       const modal=document.getElementById('stream-player');
@@ -384,7 +381,7 @@
       const isDirect=validHttp(direct)&&!/t\.me\//i.test(direct);
       modal.classList.add('open');
       if(isDirect){video.src=direct;note.textContent='இப்போது: '+title+' · '+episode+' · '+quality+' — Video playback URL பயன்படுத்தப்படுகிறது.';video.load();}
-      else{video.pause();video.removeAttribute('src');video.load();note.textContent=linkError?'Streaming link error: '+linkError:'Stream link கிடைக்கவில்லை. Get TG File மூலம் Telegram-ல் பெறலாம்.';}
+      else{video.pause();video.removeAttribute('src');video.load();note.textContent='இந்த file-க்கு நேரடி streaming URL இன்னும் அமைக்கப்படவில்லை. Telegram link மட்டும் இருந்தால் browser player-ல் video ஓடாது. கீழே உள்ள Get TG File மூலம் bot-ல் பெறலாம்.';}
       const actions=document.getElementById('stream-actions-dynamic');
       if(actions) actions.remove();
       const box=document.createElement('div');box.id='stream-actions-dynamic';box.className='stream-actions';
