@@ -359,9 +359,10 @@
 
     let activeStreamVariant=null;
     function validHttp(u){return typeof u==='string'&&/^https?:\/\//i.test(u)}
+    function absoluteUrl(u){try{return new URL(u,location.origin).href}catch(e){return ''}}
     function openStreamActions(v,title,episode,quality){
       activeStreamVariant=v||{};
-      const direct=v.play_url||v.stream_url||v.video_url||'';
+      const direct=absoluteUrl(v.play_url||v.stream_url||v.video_url||'');
       const download=v.download_url||'';
       const tg=v.telegram_url||v.watching_url||'';
       const filename=v.filename||'';
@@ -371,7 +372,7 @@
       const isDirect=validHttp(direct)&&!/t\.me\//i.test(direct);
       modal.classList.add('open');
       if(isDirect){video.src=direct;note.textContent='இப்போது: '+title+' · '+episode+' · '+quality+' — Video playback URL பயன்படுத்தப்படுகிறது.';video.load();}
-      else{video.pause();video.removeAttribute('src');video.load();note.textContent='இந்த file-க்கு நேரடி streaming URL இன்னும் அமைக்கப்படவில்லை. Telegram link மட்டும் இருந்தால் browser player-ல் video ஓடாது. கீழே உள்ள Get TG File மூலம் bot-ல் பெறலாம்.';}
+      else{video.pause();video.removeAttribute('src');video.load();note.textContent='Stream link கிடைக்கவில்லை அல்லது இந்த file 20 MB வரம்பை மீறியிருக்கலாம். Get TG File மூலம் Telegram-ல் பெறலாம்.';}
       const actions=document.getElementById('stream-actions-dynamic');
       if(actions) actions.remove();
       const box=document.createElement('div');box.id='stream-actions-dynamic';box.className='stream-actions';
