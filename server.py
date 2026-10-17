@@ -262,12 +262,9 @@ def public_rows():
             c.execute("SELECT id,filename,title,caption,category,season,episode,quality,audio,telegram_chat_id,telegram_message_id,created_at,file_size,poster_url,overview,tmdb_id,tmdb_media_type,source_caption FROM yogi_files ORDER BY created_at DESC LIMIT 1000")
             for row in c.fetchall():
                 title=extract_title(row)
-                chat=str(row.get('telegram_chat_id') or ''); mid=row.get('telegram_message_id'); url=''
-                if mid and chat.startswith('@'):
-                    url=f"https://t.me/{chat[1:]}/{mid}"
-                elif mid and chat.lstrip('-').isdigit():
-                    url=f"https://t.me/c/{chat.removeprefix('-100').removeprefix('-')}/{mid}"
-                row.update(source_type='telegram',display_title=title,category=category_for(row,title),description=row.get('overview') or row.get('caption') or '',watching_url=url,telegram_url=url)
+                # Channel publishing is disabled: direct the website's Get TG File action to this bot.
+                url=f"https://t.me/{MEDIA_BOT_USERNAME}?start=file_{row['id']}" if MEDIA_BOT_USERNAME else ''
+                row.update(source_type='telegram',display_title=title,category=category_for(row,title),description=row.get('overview') or row.get('caption') or '',watching_url=url,telegram_url=url,play_url='',download_url=url)
                 rows.append(row)
             # New standalone bot stores uploads in tcr_media_files. Read it separately
             # so the existing website tables and older bot records remain untouched.
@@ -372,5 +369,4 @@ def public_series_detail(slug):
 
 with app.app_context(): init_db()
 if __name__=="__main__": app.run(host="0.0.0.0",port=int(os.environ.get("PORT","10000")))
-
     
