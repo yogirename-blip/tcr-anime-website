@@ -192,6 +192,7 @@ def watch(pid):
     target=row["watching_url"] or row["short_url"]
     return redirect(target,302) if target.startswith(("https://","http://")) else ("Watching URL not configured",404)
 def clean_display_title(value):
+    """Strip release metadata from titles without keeping quality/audio in the title."""
     text = str(value or '').strip()
     text = re.sub(r'https?://\S+|@\w+', ' ', text)
     text = re.sub(r'(?i)\b(?:Tamil Cartoon Rare|TCR|YOGI ANIME|YoGi Linkz(?: Colony)?|Powered By)\b', ' ', text)
@@ -200,13 +201,28 @@ def clean_display_title(value):
     text = re.sub(r'(?i)\bSeason[\s._-]*\d{1,2}\b|\bEpisode[\s._#:-]*\d{1,3}\b|\bEp[\s._#:-]*\d{1,3}\b', ' ', text)
     text = re.sub(r'(?i)\b\d{2,3}\s?kbps\b|\b\d+(?:\.\d+)?\s?(?:GB|MB|TB)\b', ' ', text)
     text = re.sub(r'(?i)\b(?:4K|2160p|UHD|2K|1440p|1080p|720p|480p|x264|x265|h264|h265|hevc|aac|ac3|ddp\d*|webrip|web[\s._-]?dl|bluray|blu-ray|brrip|hdrip|hdtv|dvdrip|10bit|8bit|esub|e-sub|proper|repack|remux)\b', ' ', text)
+    # Remove parenthesized/bracketed release notes, but keep year in title such as (2026).
     text = re.sub(r'\[[^\]]*\]|\{[^}]*\}', ' ', text)
-    text = re.sub(r'(?i)\((?=[^)]*(?:AAC|Audio|ESub|Subtitle|GB|MB))[^)]*\)', ' ', text)
+    text = re.sub(r'\((?=[^)]*(?:AAC|Audio|ESub|Subtitle|GB|MB|Tamil\s*[+&,/]|Telugu\s*[+&,/]|Hindi\s*[+&,/]))[^)]*\)', ' ', text, flags=re.I)
+    # Strip language lists only when they occur after a release separator.
+    text = re.sub(r'(?i)\s[-–]\s*\[?(?:Tamil|Telugu|Hindi|English|Korean|Japanese|Malayalam|Kannada)(?:\s*[+&,/]\s*(?:Tamil|Telugu|Hindi|English|Korean|Japanese|Malayalam|Kannada))+(?:\s+Audio)?\]?$', ' ', text)
     text = re.sub(r'[._]+', ' ', text)
     text = re.sub(r'\s+', ' ', text).strip(' -_|:;,.+')
-    if not text or re.fullmatch(r'(?i)(?:1080p|720p|480p|4k|x264|x265|tamil|audio|kbps)+', text):
+    if not text or re.fullmatch(r'(?i)(?:1080p|720p|480p|4k|x264|x265|tamil|audio|kbps|multi)+', text):
         return ''
     return text
+
+
+def extract_title(row):
+    source = str(row.get('source_caption') or row.get('caption') or '')
+    first = next((line.strip() for line in source.splitlines() if line.strip()), '')
+    # Channel caption release line is more reliable than older bot-generated title fields.
+    candidates = [first, row.get('title'), row.get('filename')]
+    for candidate in candidates:
+        cleaned = clean_display_title(candidate)
+        if cleaned and len(cleaned) >= 2 and not re.search(r'(?i)\b(?:kbps|x264|x265|1080p|720p|480p)\b', cleaned):
+            return cleaned
+    return 'Untitled'
 
 
 def category_for(row, title):
@@ -216,9 +232,9 @@ def category_for(row, title):
         return 'Movies'
     if cat.lower() == 'web series':
         return 'Web Series'
-    if row.get('season') or row.get('episode') or re.search(r'(?i)\bS\d{1,2}E\d{1,3}\b|\bEpisode\s*\d+\b', raw):
-        return 'Anime'
-    if re.search(r'\b(?:19|20)\d{2}\b', title) and not re.search(r'(?i)\b(?:season|episode|S\d+E\d+)\b', raw):
+    if re.search(r'(?i)\bS\d{1,2}E\d{1,3}\b|\bSeason\s*\d+\b|\bEpisode\s*\d+\b', raw):
+        return 'Anime' if cat.lower() not in ('cartoon','cartoons') else 'Cartoons'
+    if re.search(r'\b(?:19|20)\d{2}\b', title):
         return 'Movies'
     return cat if cat in ('Anime','Movies','Web Series','Cartoons') else 'Anime'
 
@@ -229,77 +245,92 @@ def public_rows():
         with conn.cursor() as c:
             c.execute("SELECT id,title,category,description,poster_url,season,episode,quality,audio,created_at,watching_url,short_url FROM tcr_posts WHERE status='published' ORDER BY created_at DESC LIMIT 500")
             for row in c.fetchall():
-                row['source_type']='manual'; row['filename']=''; row['file_size']=None
+                row.update(source_type='manual',filename='',file_size=None)
                 row['display_title']=clean_display_title(row.get('title')) or row.get('title') or 'Untitled'
                 row['category']=category_for(row,row['display_title'])
                 row['watching_url']='/watch/'+str(row['id'])
                 rows.append(row)
             c.execute("SELECT id,filename,title,caption,category,season,episode,quality,audio,telegram_chat_id,telegram_message_id,created_at,file_size,poster_url,overview,tmdb_id,tmdb_media_type,source_caption FROM yogi_files ORDER BY created_at DESC LIMIT 1000")
             for row in c.fetchall():
-                source=str(row.get('source_caption') or row.get('caption') or '')
-                first=next((line.strip() for line in source.splitlines() if line.strip()),'')
-                title=clean_display_title(row.get('title')) or clean_display_title(first) or clean_display_title(row.get('filename')) or 'Untitled'
-                if re.search(r'(?i)\b\d{2,3}\s?kbps\b|\b(?:x264|x265|1080p|720p|480p)\b',title):
-                    title=clean_display_title(first) or clean_display_title(row.get('filename')) or title
+                title=extract_title(row)
                 chat=str(row.get('telegram_chat_id') or ''); mid=row.get('telegram_message_id'); url=''
-                if mid and chat.startswith('@'): url=f"https://t.me/{chat[1:]}/{mid}"
-                elif mid and chat.lstrip('-').isdigit(): url=f"https://t.me/c/{chat.removeprefix('-100').removeprefix('-')}/{mid}"
+                if mid and chat.startswith('@'):
+                    url=f"https://t.me/{chat[1:]}/{mid}"
+                elif mid and chat.lstrip('-').isdigit():
+                    url=f"https://t.me/c/{chat.removeprefix('-100').removeprefix('-')}/{mid}"
                 row.update(source_type='telegram',display_title=title,category=category_for(row,title),description=row.get('overview') or row.get('caption') or '',watching_url=url,telegram_url=url)
                 rows.append(row)
     rows.sort(key=lambda x:str(x.get('created_at') or ''),reverse=True)
     return rows
 
 
-def row_group_key(row):
-    cat=row.get('category') or 'Anime'; title=str(row.get('display_title') or 'Untitled').strip().lower()
-    season=str(row.get('season') or '').strip().lower()
-    # All episodes of the same anime season go under one title card. Movies group by title only.
-    return (cat,title,'' if cat=='Movies' else season)
-
-
 def slugify(value):
     return re.sub(r'[^a-z0-9]+','-',str(value or '').lower()).strip('-') or 'untitled'
 
 
+def episode_number(row):
+    value=str(row.get('episode') or '')
+    match=re.search(r'\d+',value)
+    if match: return int(match.group())
+    raw=' '.join(str(row.get(k) or '') for k in ('filename','source_caption','caption'))
+    match=re.search(r'(?i)\bS\d{1,2}E(\d{1,3})\b|\bEpisode\s*(\d{1,3})\b|\bEp\s*(\d{1,3})\b',raw)
+    return int(next(x for x in match.groups() if x)) if match else 0
+
+
+def season_number(row):
+    value=str(row.get('season') or '')
+    match=re.search(r'\d+',value)
+    if match: return int(match.group())
+    raw=' '.join(str(row.get(k) or '') for k in ('filename','source_caption','caption'))
+    match=re.search(r'(?i)\bS(\d{1,2})E\d{1,3}\b|\bSeason\s*(\d{1,2})\b',raw)
+    return int(next(x for x in match.groups() if x)) if match else 0
+
+
 def group_rows(rows):
+    # One title card per series/movie; audio/quality variants become options inside each episode.
     groups={}
     for row in rows:
-        key=row_group_key(row)
+        cat=row.get('category') or 'Anime'
+        title=str(row.get('display_title') or 'Untitled').strip()
+        key=(cat,re.sub(r'[^a-z0-9]+',' ',title.lower()).strip())
         if key not in groups:
-            season=str(row.get('season') or '').strip()
-            groups[key]={'slug':slugify(key[1]+(('-'+season.lower()) if season and key[0]!='Movies' else '')),
-                'title':row.get('display_title') or 'Untitled','category':row.get('category') or 'Anime','season':season,
-                'description':row.get('overview') or row.get('description') or '', 'poster_url':row.get('poster_url') or '',
-                'qualities':set(),'audios':set(),'episodes':[],'latest_at':str(row.get('created_at') or '')}
+            groups[key]={'slug':slugify(title),'title':title,'category':cat,'season':'','description':row.get('overview') or row.get('description') or '', 'poster_url':row.get('poster_url') or '', 'latest_at':str(row.get('created_at') or ''),'episodes':[]}
         g=groups[key]
         if not g['poster_url'] and row.get('poster_url'): g['poster_url']=row['poster_url']
         if not g['description']: g['description']=row.get('overview') or row.get('description') or ''
-        if row.get('quality') and row['quality']!='Not specified': g['qualities'].add(str(row['quality']))
-        if row.get('audio') and row['audio']!='Not specified': g['audios'].add(str(row['audio']))
-        g['episodes'].append(row)
         g['latest_at']=max(g['latest_at'],str(row.get('created_at') or ''))
+        # Match season + episode number. Each audio/quality/file remains a variant under that episode.
+        sn=season_number(row); en=episode_number(row)
+        episode_key=(sn,en) if en else (sn,0)
+        episode=next((e for e in g['episodes'] if e['_key']==episode_key),None)
+        if episode is None:
+            episode={'_key':episode_key,'season_number':sn,'episode_number':en,'title':(f'Season {sn:02d} • ' if sn else '')+(f'Episode {en:02d}' if en else (row.get('episode') or row.get('filename') or 'Movie file')),'variants':[]}
+            g['episodes'].append(episode)
+        variant={'id':row.get('id'),'quality':row.get('quality') or 'Quality not specified','audio':row.get('audio') or 'Audio not specified','file_size':row.get('file_size'),'watching_url':row.get('watching_url') or row.get('telegram_url') or '', 'filename':row.get('filename') or '', 'created_at':row.get('created_at')}
+        # Avoid duplicate links/records when the same Telegram message is imported twice.
+        unique=(variant['watching_url'],variant['quality'].lower(),variant['audio'].lower(),variant['filename'].lower())
+        if not any((v.get('watching_url'),str(v.get('quality') or '').lower(),str(v.get('audio') or '').lower(),str(v.get('filename') or '').lower())==unique for v in episode['variants']):
+            episode['variants'].append(variant)
     result=[]
     for g in groups.values():
-        g['qualities']=sorted(g['qualities']); g['audios']=sorted(g['audios']); g['episode_count']=len(g['episodes'])
-        g['episodes'].sort(key=lambda x:(int(re.search(r'\d+',str(x.get('season') or '')).group()) if re.search(r'\d+',str(x.get('season') or '')) else 0,int(re.search(r'\d+',str(x.get('episode') or '')).group()) if re.search(r'\d+',str(x.get('episode') or '')) else 0,str(x.get('created_at') or '')))
+        g['episodes'].sort(key=lambda e:(e['season_number'],e['episode_number']))
+        for e in g['episodes']:
+            e['variants'].sort(key=lambda v:(str(v.get('audio') or ''),str(v.get('quality') or '')))
+        g['episode_count']=len(g['episodes'])
+        g['variant_count']=sum(len(e['variants']) for e in g['episodes'])
         result.append(g)
     return sorted(result,key=lambda x:x['latest_at'],reverse=True)
 
 
 @app.get('/api/public-posts')
 def public_posts():
-    # Home shows one card per series/season; episodes are intentionally hidden until title click.
     return jsonify([{k:v for k,v in g.items() if k!='episodes'} for g in group_rows(public_rows())])
 
 
 @app.get('/api/public-posts/<path:slug>')
 def public_series_detail(slug):
-    rows=public_rows()
-    for group in group_rows(rows):
+    for group in group_rows(public_rows()):
         if group['slug']==slug:
-            key=(group['category'],group['title'].strip().lower(),'' if group['category']=='Movies' else str(group.get('season') or '').strip().lower())
-            group['episodes']=[r for r in rows if row_group_key(r)==key]
-            group['episodes'].sort(key=lambda x:(int(re.search(r'\d+',str(x.get('episode') or '')).group()) if re.search(r'\d+',str(x.get('episode') or '')) else 0,str(x.get('created_at') or '')))
             return jsonify(group)
     return jsonify(error='Title not found'),404
 
