@@ -1,10 +1,12 @@
 import os
 import re
 from functools import wraps
-from flask import Flask, request, jsonify, session, send_from_directory, redirect
+from flask import Flask, request, jsonify, session, send_from_directory, redirect, Response, abort, stream_with_context
 from psycopg import connect
 from psycopg.rows import dict_row
 from werkzeug.security import check_password_hash, generate_password_hash
+from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
+import httpx
 
 app = Flask(__name__, static_folder=".", static_url_path="")
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "")
@@ -14,6 +16,8 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
 ADMIN_PASSWORD_HASH = os.environ.get("ADMIN_PASSWORD_HASH", "") or (generate_password_hash(ADMIN_PASSWORD) if ADMIN_PASSWORD else "")
 ADMIN_EMAILS = [e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()]
 MEDIA_BOT_USERNAME = os.environ.get("MEDIA_BOT_USERNAME", "").strip().lstrip("@")
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
+stream_signer = URLSafeTimedSerializer(app.secret_key, salt="tcr-stream-v1")
 if not all([app.secret_key, DATABASE_URL, SUPER_ADMIN_EMAIL, ADMIN_PASSWORD_HASH]):
     raise RuntimeError("Set FLASK_SECRET_KEY, DATABASE_URL, SUPER_ADMIN_EMAIL, and either ADMIN_PASSWORD or ADMIN_PASSWORD_HASH in Render.")
 
@@ -192,6 +196,74 @@ def watch(pid):
     if not row: return "Link not found",404
     target=row["watching_url"] or row["short_url"]
     return redirect(target,302) if target.startswith(("https://","http://")) else ("Watching URL not configured",404)
+
+@app.route("/stream/<token>", methods=["GET", "HEAD"])
+def stream_telegram_file(token):
+    """Short-lived signed proxy for Telegram Bot API files. Cloud Bot API files are limited to 20 MB."""
+    if not BOT_TOKEN:
+        return jsonify(error="BOT_TOKEN is not configured on the website service"), 503
+    try:
+        file_id = int(stream_signer.loads(token, max_age=86400))
+    except SignatureExpired:
+        return jsonify(error="Stream link expired; refresh the website page"), 403
+    except (BadSignature, ValueError, TypeError):
+        return jsonify(error="Invalid stream link"), 403
+    with db() as conn:
+        with conn.cursor() as c:
+            c.execute("SELECT telegram_file_id,filename,file_size FROM yogi_files WHERE id=%s", (file_id,))
+            row = c.fetchone()
+    if not row or not row.get("telegram_file_id"):
+        return jsonify(error="File not found"), 404
+    size = row.get("file_size")
+    if size and size > 20 * 1024 * 1024:
+        return jsonify(error="This file exceeds the 20 MB cloud Bot API download limit. A separate streaming/storage service is required.", max_bytes=20*1024*1024), 413
+    client = None
+    upstream = None
+    try:
+        client = httpx.Client(timeout=httpx.Timeout(30.0, read=120.0), follow_redirects=True)
+        meta = client.get(f"https://api.telegram.org/bot{BOT_TOKEN}/getFile", params={"file_id": row["telegram_file_id"]})
+        meta.raise_for_status()
+        payload = meta.json()
+        if not payload.get("ok"):
+            client.close()
+            return jsonify(error="Telegram getFile failed"), 502
+        file_path = payload["result"]["file_path"]
+        upstream_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}"
+        headers = {}
+        if request.headers.get("Range"):
+            headers["Range"] = request.headers["Range"]
+        upstream = client.send(client.build_request(request.method, upstream_url, headers=headers), stream=True)
+        if upstream.status_code >= 400:
+            status = upstream.status_code
+            upstream.close(); client.close()
+            return jsonify(error="Telegram file fetch failed", status=status), 502
+        response_headers = {}
+        for key in ("Content-Type", "Content-Length", "Content-Range", "Accept-Ranges", "Last-Modified"):
+            if key in upstream.headers:
+                response_headers[key] = upstream.headers[key]
+        safe_name = re.sub(r"[^A-Za-z0-9._-]", "_", row.get("filename") or "video.mp4")
+        response_headers["Content-Disposition"] = f'inline; filename="{safe_name}"'
+        response_headers["Cache-Control"] = "private, max-age=300"
+        if request.method == "HEAD":
+            status = upstream.status_code
+            upstream.close(); client.close()
+            return Response(status=status, headers=response_headers)
+        def generate():
+            try:
+                for chunk in upstream.iter_bytes(1024 * 128):
+                    if chunk:
+                        yield chunk
+            finally:
+                upstream.close()
+                client.close()
+        return Response(stream_with_context(generate()), status=upstream.status_code, headers=response_headers, direct_passthrough=True)
+    except Exception:
+        if upstream is not None: upstream.close()
+        if client is not None: client.close()
+        app.logger.exception("Telegram stream proxy failed")
+        return jsonify(error="Could not stream this Telegram file"), 502
+
+
 def clean_display_title(value):
     """Strip release metadata from titles without keeping quality/audio in the title."""
     text = str(value or '').strip()
@@ -259,12 +331,18 @@ def public_rows():
                 row['category']=category_for(row,row['display_title'])
                 row['watching_url']='/watch/'+str(row['id'])
                 rows.append(row)
-            c.execute("SELECT id,filename,title,caption,category,season,episode,quality,audio,telegram_chat_id,telegram_message_id,created_at,file_size,poster_url,overview,tmdb_id,tmdb_media_type,source_caption FROM yogi_files ORDER BY created_at DESC LIMIT 1000")
+            c.execute("SELECT id,filename,title,caption,category,season,episode,quality,audio,telegram_chat_id,telegram_message_id,telegram_file_id,created_at,file_size,poster_url,overview,tmdb_id,tmdb_media_type,source_caption FROM yogi_files ORDER BY created_at DESC LIMIT 1000")
             for row in c.fetchall():
                 title=extract_title(row)
-                # Channel publishing is disabled: direct the website's Get TG File action to this bot.
-                url=f"https://t.me/{MEDIA_BOT_USERNAME}?start=file_{row['id']}" if MEDIA_BOT_USERNAME else ''
-                row.update(source_type='telegram',display_title=title,category=category_for(row,title),description=row.get('overview') or row.get('caption') or '',watching_url=url,telegram_url=url,play_url='',download_url=url)
+                chat=str(row.get('telegram_chat_id') or ''); mid=row.get('telegram_message_id'); url=''
+                if mid and chat.startswith('@'):
+                    url=f"https://t.me/{chat[1:]}/{mid}"
+                elif mid and chat.lstrip('-').isdigit():
+                    url=f"https://t.me/c/{chat.removeprefix('-100').removeprefix('-')}/{mid}"
+                token = stream_signer.dumps(int(row['id']))
+                stream_url = f"/stream/{token}" if BOT_TOKEN and row.get('telegram_file_id') else ''
+                tg_deep_link = f"https://t.me/{MEDIA_BOT_USERNAME}?start=file_{row['id']}" if MEDIA_BOT_USERNAME else url
+                row.update(source_type='telegram',display_title=title,category=category_for(row,title),description=row.get('overview') or row.get('caption') or '',watching_url=tg_deep_link,telegram_url=tg_deep_link,play_url=stream_url,download_url=stream_url)
                 rows.append(row)
             # New standalone bot stores uploads in tcr_media_files. Read it separately
             # so the existing website tables and older bot records remain untouched.
