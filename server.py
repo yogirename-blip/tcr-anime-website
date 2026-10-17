@@ -1,4 +1,5 @@
 import os
+import re
 from functools import wraps
 from flask import Flask, request, jsonify, session, send_from_directory, redirect
 from psycopg import connect
@@ -190,51 +191,117 @@ def watch(pid):
     if not row: return "Link not found",404
     target=row["watching_url"] or row["short_url"]
     return redirect(target,302) if target.startswith(("https://","http://")) else ("Watching URL not configured",404)
-@app.get("/api/public-posts")
-def public_posts():
-    rows = []
+def clean_display_title(value):
+    text = str(value or '').strip()
+    text = re.sub(r'https?://\S+|@\w+', ' ', text)
+    text = re.sub(r'(?i)\b(?:Tamil Cartoon Rare|TCR|YOGI ANIME|YoGi Linkz(?: Colony)?|Powered By)\b', ' ', text)
+    text = re.sub(r'(?i)\.(?:mkv|mp4|avi|mov|webm|m4v|zip|rar|7z|mp3|m4a|aac|flac)\b', ' ', text)
+    text = re.sub(r'(?i)\bS(?:eason)?[\s._-]*\d{1,2}[\s._-]*E(?:P(?:isode)?)?[\s._-]*\d{1,3}\b', ' ', text)
+    text = re.sub(r'(?i)\bSeason[\s._-]*\d{1,2}\b|\bEpisode[\s._#:-]*\d{1,3}\b|\bEp[\s._#:-]*\d{1,3}\b', ' ', text)
+    text = re.sub(r'(?i)\b\d{2,3}\s?kbps\b|\b\d+(?:\.\d+)?\s?(?:GB|MB|TB)\b', ' ', text)
+    text = re.sub(r'(?i)\b(?:4K|2160p|UHD|2K|1440p|1080p|720p|480p|x264|x265|h264|h265|hevc|aac|ac3|ddp\d*|webrip|web[\s._-]?dl|bluray|blu-ray|brrip|hdrip|hdtv|dvdrip|10bit|8bit|esub|e-sub|proper|repack|remux)\b', ' ', text)
+    text = re.sub(r'\[[^\]]*\]|\{[^}]*\}', ' ', text)
+    text = re.sub(r'(?i)\((?=[^)]*(?:AAC|Audio|ESub|Subtitle|GB|MB))[^)]*\)', ' ', text)
+    text = re.sub(r'[._]+', ' ', text)
+    text = re.sub(r'\s+', ' ', text).strip(' -_|:;,.+')
+    if not text or re.fullmatch(r'(?i)(?:1080p|720p|480p|4k|x264|x265|tamil|audio|kbps)+', text):
+        return ''
+    return text
+
+
+def category_for(row, title):
+    raw = ' '.join(str(row.get(k) or '') for k in ('filename','source_caption','caption'))
+    cat = str(row.get('category') or 'Anime')
+    if cat.lower() in ('movie','movies'):
+        return 'Movies'
+    if cat.lower() == 'web series':
+        return 'Web Series'
+    if row.get('season') or row.get('episode') or re.search(r'(?i)\bS\d{1,2}E\d{1,3}\b|\bEpisode\s*\d+\b', raw):
+        return 'Anime'
+    if re.search(r'\b(?:19|20)\d{2}\b', title) and not re.search(r'(?i)\b(?:season|episode|S\d+E\d+)\b', raw):
+        return 'Movies'
+    return cat if cat in ('Anime','Movies','Web Series','Cartoons') else 'Anime'
+
+
+def public_rows():
+    rows=[]
     with db() as conn:
         with conn.cursor() as c:
-            c.execute("""SELECT id,title,category,description,poster_url,season,episode,quality,audio,created_at
-                         FROM tcr_posts WHERE status='published' ORDER BY created_at DESC LIMIT 200""")
-            rows.extend(c.fetchall())
-            try:
-                c.execute("""SELECT id,filename,title,caption,category,season,episode,quality,audio,
-                                    telegram_chat_id,telegram_message_id,created_at,file_size,
-                                    poster_url,overview,tmdb_id,tmdb_media_type
-                             FROM yogi_files ORDER BY created_at DESC LIMIT 200""")
-                for r in c.fetchall():
-                    title = r.get("title") or r.get("filename") or "Untitled"
-                    chat_id = str(r.get("telegram_chat_id") or "")
-                    message_id = r.get("telegram_message_id")
-                    telegram_url = ""
-                    if message_id and chat_id:
-                        if chat_id.startswith("@"):
-                            telegram_url = "https://t.me/" + chat_id[1:] + "/" + str(message_id)
-                        elif chat_id.lstrip("-").isdigit():
-                            channel_id = chat_id.removeprefix("-100").removeprefix("-")
-                            telegram_url = "https://t.me/c/" + channel_id + "/" + str(message_id)
-                    rows.append({
-                        "id": "telegram-" + str(r.get("id")),
-                        "title": title,
-                        "category": r.get("category") or "Anime",
-                        "description": r.get("overview") or r.get("caption") or "",
-                        "poster_url": r.get("poster_url") or "",
-                        "season": r.get("season") or "",
-                        "episode": r.get("episode") or "",
-                        "quality": r.get("quality") or "",
-                        "audio": r.get("audio") or "",
-                        "file_size": r.get("file_size"),
-                        "tmdb_id": r.get("tmdb_id"),
-                        "tmdb_media_type": r.get("tmdb_media_type") or "",
-                        "created_at": r.get("created_at"),
-                        "watching_url": telegram_url,
-                        "telegram_url": telegram_url
-                    })
-            except Exception:
-                app.logger.exception("Could not read Telegram files for public feed")
-    rows.sort(key=lambda r: str(r.get("created_at") or ""), reverse=True)
-    return jsonify(rows[:300])
+            c.execute("SELECT id,title,category,description,poster_url,season,episode,quality,audio,created_at,watching_url,short_url FROM tcr_posts WHERE status='published' ORDER BY created_at DESC LIMIT 500")
+            for row in c.fetchall():
+                row['source_type']='manual'; row['filename']=''; row['file_size']=None
+                row['display_title']=clean_display_title(row.get('title')) or row.get('title') or 'Untitled'
+                row['category']=category_for(row,row['display_title'])
+                row['watching_url']='/watch/'+str(row['id'])
+                rows.append(row)
+            c.execute("SELECT id,filename,title,caption,category,season,episode,quality,audio,telegram_chat_id,telegram_message_id,created_at,file_size,poster_url,overview,tmdb_id,tmdb_media_type,source_caption FROM yogi_files ORDER BY created_at DESC LIMIT 1000")
+            for row in c.fetchall():
+                source=str(row.get('source_caption') or row.get('caption') or '')
+                first=next((line.strip() for line in source.splitlines() if line.strip()),'')
+                title=clean_display_title(row.get('title')) or clean_display_title(first) or clean_display_title(row.get('filename')) or 'Untitled'
+                if re.search(r'(?i)\b\d{2,3}\s?kbps\b|\b(?:x264|x265|1080p|720p|480p)\b',title):
+                    title=clean_display_title(first) or clean_display_title(row.get('filename')) or title
+                chat=str(row.get('telegram_chat_id') or ''); mid=row.get('telegram_message_id'); url=''
+                if mid and chat.startswith('@'): url=f"https://t.me/{chat[1:]}/{mid}"
+                elif mid and chat.lstrip('-').isdigit(): url=f"https://t.me/c/{chat.removeprefix('-100').removeprefix('-')}/{mid}"
+                row.update(source_type='telegram',display_title=title,category=category_for(row,title),description=row.get('overview') or row.get('caption') or '',watching_url=url,telegram_url=url)
+                rows.append(row)
+    rows.sort(key=lambda x:str(x.get('created_at') or ''),reverse=True)
+    return rows
+
+
+def row_group_key(row):
+    cat=row.get('category') or 'Anime'; title=str(row.get('display_title') or 'Untitled').strip().lower()
+    season=str(row.get('season') or '').strip().lower()
+    # All episodes of the same anime season go under one title card. Movies group by title only.
+    return (cat,title,'' if cat=='Movies' else season)
+
+
+def slugify(value):
+    return re.sub(r'[^a-z0-9]+','-',str(value or '').lower()).strip('-') or 'untitled'
+
+
+def group_rows(rows):
+    groups={}
+    for row in rows:
+        key=row_group_key(row)
+        if key not in groups:
+            season=str(row.get('season') or '').strip()
+            groups[key]={'slug':slugify(key[1]+(('-'+season.lower()) if season and key[0]!='Movies' else '')),
+                'title':row.get('display_title') or 'Untitled','category':row.get('category') or 'Anime','season':season,
+                'description':row.get('overview') or row.get('description') or '', 'poster_url':row.get('poster_url') or '',
+                'qualities':set(),'audios':set(),'episodes':[],'latest_at':str(row.get('created_at') or '')}
+        g=groups[key]
+        if not g['poster_url'] and row.get('poster_url'): g['poster_url']=row['poster_url']
+        if not g['description']: g['description']=row.get('overview') or row.get('description') or ''
+        if row.get('quality') and row['quality']!='Not specified': g['qualities'].add(str(row['quality']))
+        if row.get('audio') and row['audio']!='Not specified': g['audios'].add(str(row['audio']))
+        g['episodes'].append(row)
+        g['latest_at']=max(g['latest_at'],str(row.get('created_at') or ''))
+    result=[]
+    for g in groups.values():
+        g['qualities']=sorted(g['qualities']); g['audios']=sorted(g['audios']); g['episode_count']=len(g['episodes'])
+        g['episodes'].sort(key=lambda x:(int(re.search(r'\d+',str(x.get('season') or '')).group()) if re.search(r'\d+',str(x.get('season') or '')) else 0,int(re.search(r'\d+',str(x.get('episode') or '')).group()) if re.search(r'\d+',str(x.get('episode') or '')) else 0,str(x.get('created_at') or '')))
+        result.append(g)
+    return sorted(result,key=lambda x:x['latest_at'],reverse=True)
+
+
+@app.get('/api/public-posts')
+def public_posts():
+    # Home shows one card per series/season; episodes are intentionally hidden until title click.
+    return jsonify([{k:v for k,v in g.items() if k!='episodes'} for g in group_rows(public_rows())])
+
+
+@app.get('/api/public-posts/<path:slug>')
+def public_series_detail(slug):
+    rows=public_rows()
+    for group in group_rows(rows):
+        if group['slug']==slug:
+            key=(group['category'],group['title'].strip().lower(),'' if group['category']=='Movies' else str(group.get('season') or '').strip().lower())
+            group['episodes']=[r for r in rows if row_group_key(r)==key]
+            group['episodes'].sort(key=lambda x:(int(re.search(r'\d+',str(x.get('episode') or '')).group()) if re.search(r'\d+',str(x.get('episode') or '')) else 0,str(x.get('created_at') or '')))
+            return jsonify(group)
+    return jsonify(error='Title not found'),404
 
 with app.app_context(): init_db()
 if __name__=="__main__": app.run(host="0.0.0.0",port=int(os.environ.get("PORT","10000")))
